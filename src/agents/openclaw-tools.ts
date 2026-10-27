@@ -18,6 +18,7 @@ import {
 } from "./agent-tools.before-tool-call.js";
 import { resolveOpenClawPluginToolsForOptions } from "./openclaw-plugin-tools.js";
 import { filterToolsByClientCaps } from "./openclaw-tools.client-caps.js";
+import { resolveCapturedOpenClawToolsFsPolicy } from "./openclaw-tools.fs-policy.js";
 import { createHostedGatewayTools } from "./openclaw-tools.gateway.js";
 import { resolveOpenClawGitHubTools } from "./openclaw-tools.github.js";
 import {
@@ -105,6 +106,10 @@ export function createOpenClawTools(options?: OpenClawToolsOptions): AnyAgentToo
     config: resolvedConfig,
     agentId: options?.requesterAgentIdOverride,
   });
+  options = {
+    ...options,
+    fsPolicy: resolveCapturedOpenClawToolsFsPolicy(options ?? {}, sessionAgentId),
+  };
   const swarmToolGroups = createOpenClawSwarmToolGroups({
     config: sessionConfig ?? getRuntimeConfig(),
     effectiveRequesterAgentId: sessionAgentId,
