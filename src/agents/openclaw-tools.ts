@@ -28,6 +28,7 @@ import {
 import { hasAnyAuthProfileStoreSourceAsync } from "./auth-profiles/source-check.js";
 import { resolveOpenClawPluginToolsForOptions } from "./openclaw-plugin-tools.js";
 import { filterToolsByClientCaps } from "./openclaw-tools.client-caps.js";
+import { resolveCapturedOpenClawToolsFsPolicy } from "./openclaw-tools.fs-policy.js";
 import { createHostedGatewayTools } from "./openclaw-tools.gateway.js";
 import {
   isToolExplicitlyAllowedByFactoryPolicy,
@@ -135,6 +136,7 @@ export async function createOpenClawToolsWithPreparation(
     config: captured.config,
     agentId: captured.requesterAgentIdOverride,
   });
+  captured.fsPolicy = resolveCapturedOpenClawToolsFsPolicy(captured, sessionAgentId);
   const delegated = isEmbeddedMode()
     ? []
     : await createOpenClawDelegateToolsForRunAsync({ ...captured, sessionAgentId }, shared);
@@ -182,6 +184,10 @@ export function createOpenClawTools(
     config: resolvedConfig,
     agentId: options?.requesterAgentIdOverride,
   });
+  options = {
+    ...options,
+    fsPolicy: resolveCapturedOpenClawToolsFsPolicy(options ?? {}, sessionAgentId),
+  };
   const swarmToolGroups = createOpenClawSwarmToolGroups({
     ...options,
     config: sessionConfig ?? getRuntimeConfig(),
