@@ -39,6 +39,7 @@ vi.mock("../logging/subsystem.js", () => ({
   createSubsystemLogger: () => ({ info: vi.fn() }),
 }));
 
+// mock-isolation: Exercise broker and database custody without starting a Gateway.
 vi.mock("./server-start.js", () => ({
   startGatewayServerCore: async () => {
     const { runExec } = await import("../process/exec.js");

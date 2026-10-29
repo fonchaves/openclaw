@@ -1,7 +1,10 @@
 import { expectDefined } from "@openclaw/normalization-core";
 import { expect, it } from "vitest";
 import { createDeferred } from "../../../../test/helpers/promise.js";
-import { getActiveGatewayRootWorkCount } from "../../../process/gateway-work-admission.js";
+import {
+  getActiveGatewayRootWorkCount,
+  runWithGatewayIndependentRootWorkAdmission,
+} from "../../../process/gateway-work-admission.js";
 import {
   waitForFast,
   type SubagentRegistryHarness,
@@ -50,10 +53,14 @@ export function registerSupersededNativeTimingTest({
       childSessionKey,
       task: "old timing owner",
     });
-    const termination = mod.markSubagentRunTerminated({
-      runId: "run-released-timing-old",
-      reason: "manual kill",
-    });
+    const termination = runWithGatewayIndependentRootWorkAdmission(
+      () =>
+        mod.markSubagentRunTerminated({
+          runId: "run-released-timing-old",
+          reason: "manual kill",
+        }),
+      "subagents:test-native-termination",
+    );
     try {
       await entered.promise;
       expect(getActiveGatewayRootWorkCount()).toBeGreaterThan(0);

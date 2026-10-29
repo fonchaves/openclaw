@@ -75,16 +75,16 @@ it.for([
         });
         const logger = createNoopLogger();
         const adapter = createGatewayCronTargetResolver(state.env, logger);
-        const sendCronFailureAlert: NonNullable<CronServiceDeps["sendCronFailureAlert"]> = async (
-          params,
-        ) => {
-          await params.onDeliverySettled({
-            delivered: false,
-            status: "not-delivered",
-            error: "failure alert channel unavailable",
-          });
-          throw new Error("failure alert channel unavailable");
-        };
+        const sendCronFailureAlert = vi.fn<NonNullable<CronServiceDeps["sendCronFailureAlert"]>>(
+          async (params) => {
+            await params.onDeliverySettled({
+              delivered: false,
+              status: "not-delivered",
+              error: "failure alert channel unavailable",
+            });
+            throw new Error("failure alert channel unavailable");
+          },
+        );
         const failRun = async () => ({
           status: "error" as const,
           error: "temporary upstream error",
@@ -113,6 +113,9 @@ it.for([
           });
 
           await cron.run(job.id, "force");
+          await expect(
+            withinTest(sendCronFailureAlert.mock.results[0]!.value, signal),
+          ).rejects.toThrow("failure alert channel unavailable");
           expect(receipts).toHaveLength(1);
           await expect(withinTest(receipts[0]!.accepted, signal)).resolves.toEqual({ ok: true });
           await expect(withinTest(receipts[0]!.settled, signal)).resolves.toMatchObject({

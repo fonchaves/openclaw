@@ -200,83 +200,54 @@ afterEach(async () => {
 
 describe("Goal continuation eligibility", () => {
   it.each([
-    "remote-exec",
-    "local",
-    "worker-turn",
-    "wrong-session",
-    "unsupported",
-    "no-authority",
-  ] as const)("binds Codex continuation to supported placement facts (%s)", async (mode) => {
+    [true, "remote-exec", "workerGoal"],
+    [true, "local", "localCodexGoal"],
+    [true, "worker-turn", undefined],
+    [true, "wrong-session", undefined],
+    [true, "unsupported", undefined],
+    [true, "no-authority", undefined],
+    [false, "local", "localCodexGoal"],
+    [false, "worker-required", undefined],
+    [false, "no-authority", undefined],
+    [false, "revoked", undefined],
+  ] as const)("checks Codex Goal admission (placed=%s, %s)", async (placed, mode, marker) => {
     const f = fixture();
-    f.params.base.operatorAuthority = {
-      profileId: "operator",
-      scopes: ["operator.admin"],
-      assertCurrent: () => {},
-    };
-    if (mode === "no-authority") {
-      f.params.base.operatorAuthority = undefined;
-    }
-    vi.mocked(readSessionEntryReadOnlyInWorker).mockResolvedValue({
-      ...entry(),
-      agentHarnessId: "codex",
-    });
+    const codexSession = { ...entry(), agentHarnessId: "codex" };
+    vi.mocked(readSessionEntryReadOnlyInWorker).mockResolvedValue(codexSession);
     workerPlacement.supported = mode !== "unsupported";
-    workerPlacement.current.mockReturnValue({
-      ...localPlacement(identity.sessionId),
-      agentId: "main",
-      sessionKey: mode === "wrong-session" ? "other" : f.params.sessionKey,
-      sessionId: identity.sessionId,
-      state: mode === "local" ? "local" : "requested",
-      executionMode: mode === "worker-turn" ? "worker-turn" : "remote-exec",
-    });
-    expect(await enqueueGoalContinuation(f.params)).toBe(
-      mode === "remote-exec" || mode === "local",
-    );
-    if (mode === "remote-exec") {
-      expect(vi.mocked(enqueueFollowupRun).mock.calls[0]![1].goalContinuation).toEqual({
-        ...identity,
-        workerGoal: true,
+    if (placed) {
+      workerPlacement.current.mockReturnValue({
+        ...localPlacement(identity.sessionId),
+        sessionKey: mode === "wrong-session" ? "other" : f.params.sessionKey,
+        state: mode === "local" ? "local" : "requested",
+        executionMode: mode === "worker-turn" ? "worker-turn" : "remote-exec",
       });
-    } else if (mode === "local") {
-      expect(vi.mocked(enqueueFollowupRun).mock.calls[0]![1].goalContinuation).toEqual({
-        ...identity,
-        localCodexGoal: true,
-      });
+    }
+    if (mode !== "no-authority") {
+      f.params.base.operatorAuthority = {
+        profileId: "operator",
+        scopes: ["operator.admin"],
+        assertCurrent: () => {
+          if (mode === "revoked") {
+            throw new Error("operator revoked");
+          }
+        },
+      };
+    }
+    if (mode === "worker-required") {
+      f.params.base.run.config = { cloudWorkers: { requiredProfile: "worker" } };
+    }
+    if (mode === "revoked") {
+      await expect(enqueueGoalContinuation(f.params)).rejects.toThrow("operator revoked");
     } else {
-      expect(enqueueFollowupRun).not.toHaveBeenCalled();
+      expect(await enqueueGoalContinuation(f.params)).toBe(Boolean(marker));
+    }
+    expect(enqueueFollowupRun).toHaveBeenCalledTimes(marker ? 1 : 0);
+    if (marker) {
+      const queued = vi.mocked(enqueueFollowupRun).mock.calls[0]![1];
+      expect(queued.goalContinuation).toEqual({ ...identity, [marker]: true });
     }
   });
-  it.each(["local", "worker-required", "no-authority", "revoked"] as const)(
-    "admits unplaced Codex goals only with current local authority (%s)",
-    async (mode) => {
-      const f = fixture();
-      vi.mocked(readSessionEntryReadOnlyInWorker).mockResolvedValue({
-        ...entry(),
-        agentHarnessId: "codex",
-      });
-      workerPlacement.current.mockReturnValue(undefined);
-      if (mode !== "no-authority") {
-        f.params.base.operatorAuthority = {
-          profileId: "operator",
-          scopes: ["operator.admin"],
-          assertCurrent: () => {
-            if (mode === "revoked") {
-              throw new Error("operator revoked");
-            }
-          },
-        };
-      }
-      if (mode === "worker-required") {
-        f.params.base.run.config = { cloudWorkers: { requiredProfile: "worker" } };
-      }
-      if (mode === "revoked") {
-        await expect(enqueueGoalContinuation(f.params)).rejects.toThrow("operator revoked");
-      } else {
-        expect(await enqueueGoalContinuation(f.params)).toBe(mode === "local");
-      }
-      expect(enqueueFollowupRun).toHaveBeenCalledTimes(mode === "local" ? 1 : 0);
-    },
-  );
   it.each([
     { marker: "local", current: "local", expected: true },
     { marker: "local", current: "worker", expected: false },
