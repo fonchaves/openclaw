@@ -505,7 +505,7 @@ describe.skipIf(!hasPopoverApi)("platform menu hover", () => {
           getComputedStyle(referenceItem).getPropertyValue(property),
         );
       }
-      await hoverBackground(item, highlight);
+      await hoverBackground(item, colorSwatch("var(--surface-hover)"));
       entry.forEach((animation) => animation.finish());
       await expect.poll(() => menu.dataset.phase).toBe("open");
     });
