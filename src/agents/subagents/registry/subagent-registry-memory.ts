@@ -16,6 +16,7 @@ import {
 } from "./subagent-child-owner-match.js";
 import { projectSubagentRunForSessionList } from "./subagent-delivery-state.js";
 import { SUBAGENT_ENDED_REASON_KILLED } from "./subagent-lifecycle-events.js";
+import type { SubagentCompletionCustody } from "./subagent-registry-memory.types.js";
 import {
   publishSubagentRunChanges,
   subscribeSubagentRunChanges,
@@ -26,7 +27,7 @@ import {
   subagentSweepAt,
   SubagentRunWorkIndex,
 } from "./subagent-registry-work-index.js";
-import type { SubagentCompletionCustody, SubagentRunRecord } from "./subagent-registry.types.js";
+import type { SubagentRunRecord } from "./subagent-registry.types.js";
 import {
   getSubagentRunRuntimeKey,
   copySubagentRunRuntimeOwner,

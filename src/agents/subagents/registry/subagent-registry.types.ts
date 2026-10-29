@@ -4,7 +4,6 @@ import type {
 } from "../../../config/sessions/session-entry-current.types.js";
 import type { SessionEntry } from "../../../config/sessions/types.js";
 import type { SubagentEndReason } from "../../../context-engine/types.js";
-import type { captureOperatorToolGatewayContinuationContext } from "../../../gateway/server-plugin-in-process-dispatch.js";
 import type { DeliveryContext } from "../../../utils/delivery-context.types.js";
 import type { AgentRunTerminalReplySnapshot } from "../../agent-run-terminal-reply.types.js";
 import type { OperationalRunInstanceRef } from "../../operational-run-instance.js";
@@ -16,14 +15,6 @@ import type {
   SubagentCompletionDeliveryState,
   SubagentRunReadRecord,
 } from "./subagent-registry-read.types.js";
-
-/** In-process custody only; requester accounting never grants completion authority. */
-export type SubagentCompletionCustody = {
-  authority: NonNullable<Awaited<ReturnType<typeof captureOperatorToolGatewayContinuationContext>>>;
-  entry: SubagentRunRecord;
-  requesterRunInstance?: OperationalRunInstanceRef;
-  stop: () => void;
-};
 
 export type SubagentSessionEffects = {
   isCurrent(): Promise<boolean>;
