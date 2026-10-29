@@ -168,9 +168,12 @@ claimed. Keep source attribution and original copyright notices intact.
 Run node --test test/scripts/a2ui-zod-bounds.regression.mjs and the native
 node scripts/run-vitest.mjs run test/scripts/a2ui-zod-bounds.test.ts.
 
-The package-patch guard is deliberately unchanged. This new patch still needs
-explicit authorization in its exact-package allowlist before landing; the
-current guard rejects it. No check is disabled or reclassified. Keep the PR
-draft pending that decision, independent full-context review and hosted checks.
+The package-patch guard registers only zod@3.25.76 at
+patches/zod@3.25.76.patch. Other versions, paths and package-local patch
+registrations remain rejected; no guard or blanket exception is disabled.
+Remove this registration and patch when a maintained upstream release retains
+Zod 3 public contracts and passes the same baseline/fixed Catalog regressions,
+public declaration checks and Canvas bundle checks. Independent full-context
+review and required hosted checks still gate readiness.
 
 Patch SHA-256: 2f14d2000a3645bf519c1a1cc4848a71d55185327a9a976a4f033e7d507b727d
