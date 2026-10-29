@@ -27,3 +27,14 @@ export function resolveCapturedOpenClawToolsFsPolicy(
     })
   );
 }
+
+/** Preserve caller options while capturing a policy once for every constructed tool. */
+export function withCapturedOpenClawToolsFsPolicy(
+  options: OpenClawToolsOptions | undefined,
+  sessionAgentId: string,
+): OpenClawToolsOptions {
+  return {
+    ...options,
+    fsPolicy: resolveCapturedOpenClawToolsFsPolicy(options ?? {}, sessionAgentId),
+  };
+}

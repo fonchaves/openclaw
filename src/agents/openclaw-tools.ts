@@ -18,7 +18,7 @@ import {
 } from "./agent-tools.before-tool-call.js";
 import { resolveOpenClawPluginToolsForOptions } from "./openclaw-plugin-tools.js";
 import { filterToolsByClientCaps } from "./openclaw-tools.client-caps.js";
-import { resolveCapturedOpenClawToolsFsPolicy } from "./openclaw-tools.fs-policy.js";
+import { withCapturedOpenClawToolsFsPolicy } from "./openclaw-tools.fs-policy.js";
 import { createHostedGatewayTools } from "./openclaw-tools.gateway.js";
 import { resolveOpenClawGitHubTools } from "./openclaw-tools.github.js";
 import {
@@ -106,10 +106,7 @@ export function createOpenClawTools(input?: OpenClawToolsOptions): AnyAgentTool[
     config: resolvedConfig,
     agentId: input?.requesterAgentIdOverride,
   });
-  const options = {
-    ...input,
-    fsPolicy: resolveCapturedOpenClawToolsFsPolicy(input ?? {}, sessionAgentId),
-  };
+  const options = withCapturedOpenClawToolsFsPolicy(input, sessionAgentId);
   const swarmToolGroups = createOpenClawSwarmToolGroups({
     config: sessionConfig ?? getRuntimeConfig(),
     effectiveRequesterAgentId: sessionAgentId,
