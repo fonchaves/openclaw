@@ -87,7 +87,10 @@ describe("update completion ownership", () => {
         return unchangedPluginResult();
       });
 
-      await invoke("repair");
+      await runRegisteredCli({
+        register: registerUpdateCli,
+        argv: ["update", "repair", "--yes", "--no-restart", "--json"],
+      });
 
       const [run] = listUpdateRuns();
       expect(run).toMatchObject({ status: "succeeded" });
