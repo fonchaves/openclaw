@@ -7,11 +7,13 @@ import {
 import { runCommandBuffered } from "./exec.js";
 
 const runner = vi.hoisted(() => vi.fn());
-vi.mock("./exec-runner.js", () => ({
+vi.mock("./exec-runner.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./exec-runner.js")>()),
   runCommandWithTimeout: runner,
   runUtf8CommandWithTimeout: vi.fn(),
 }));
-vi.mock("./exec-spawn.js", () => ({
+vi.mock("./exec-spawn.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./exec-spawn.js")>()),
   COMMAND_PROCESS_TREE_KILL_GRACE_MS: 100,
   resolveCommandProcessSignal: vi.fn(),
   retainCommandProcessCleanup: vi.fn(),
