@@ -64,7 +64,13 @@ complete_prepare_push "$2" "$3" "$4" "$4" "$2"
   const current = f.git(f.repo, "rev-parse", "HEAD");
   // Authenticate the official source spelling while keeping every transport
   // inside the fixture's real local Git repository.
-  f.git(f.repo, "config", `url.${f.repo}.insteadOf`, "https://github.com/openclaw/openclaw.git");
+  f.git(
+    f.repo,
+    "config",
+    "--add",
+    `url.${f.repo}.insteadOf`,
+    "https://github.com/openclaw/openclaw.git",
+  );
   f.git(f.repo, "remote", "set-url", "origin", "https://github.com/openclaw/openclaw.git");
   f.git(f.repo, "fetch", "-q", "origin", "main");
   const review = f.prepGit("hash-object", "--no-filters", f.local("correction-review.json"));
