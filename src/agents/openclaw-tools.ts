@@ -91,10 +91,10 @@ import { createWebFetchTool, createWebSearchTool } from "./tools/web-tools.js";
 import { resolveWorkspaceRoot } from "./workspace-dir.js";
 
 export { filterToolsByClientCaps } from "./openclaw-tools.client-caps.js";
-export function createOpenClawTools(options?: OpenClawToolsOptions): AnyAgentTool[] {
-  const resolvedConfig = options?.config;
-  const sessionConfig = options?.sessionConfigSource === "runtime" ? undefined : resolvedConfig;
-  const activeProjectKeys = options?.preparedModelRuntime?.activeProjectKeys ?? [];
+export function createOpenClawTools(input?: OpenClawToolsOptions): AnyAgentTool[] {
+  const resolvedConfig = input?.config;
+  const sessionConfig = input?.sessionConfigSource === "runtime" ? undefined : resolvedConfig;
+  const activeProjectKeys = input?.preparedModelRuntime?.activeProjectKeys ?? [];
   const runtimeSnapshot = getActiveSecretsRuntimeConfigSnapshot();
   const availabilityConfig = selectApplicableRuntimeConfig({
     inputConfig: resolvedConfig,
@@ -102,13 +102,13 @@ export function createOpenClawTools(options?: OpenClawToolsOptions): AnyAgentToo
     runtimeSourceConfig: runtimeSnapshot?.sourceConfig,
   });
   const { sessionAgentId } = resolveSessionAgentIds({
-    sessionKey: options?.runSessionKey ?? options?.agentSessionKey,
+    sessionKey: input?.runSessionKey ?? input?.agentSessionKey,
     config: resolvedConfig,
-    agentId: options?.requesterAgentIdOverride,
+    agentId: input?.requesterAgentIdOverride,
   });
-  options = {
-    ...options,
-    fsPolicy: resolveCapturedOpenClawToolsFsPolicy(options ?? {}, sessionAgentId),
+  const options = {
+    ...input,
+    fsPolicy: resolveCapturedOpenClawToolsFsPolicy(input ?? {}, sessionAgentId),
   };
   const swarmToolGroups = createOpenClawSwarmToolGroups({
     config: sessionConfig ?? getRuntimeConfig(),

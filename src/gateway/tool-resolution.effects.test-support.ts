@@ -120,7 +120,7 @@ export function registerGatewayToolFinalEffectTests() {
       } as unknown as GatewayRequestContext;
       const operationalRunInstance = createOperationalRunInstanceRef("gateway-effects");
       const authority = claimAgentRunDelegatedAuthority(operationalRunInstance);
-      const tools = await metadata.run(() =>
+      const tools = metadata.run(() =>
         resolveGatewayScopedTools({
           cfg,
           sessionKey: "agent:main:effects",
