@@ -455,7 +455,13 @@ export function cronJobMatchesDeclarationScope(params: {
   defaultAgentId?: string;
 }): boolean {
   if (params.callerScope) {
-    return cronJobMatchesCallerScope(params);
+    // Owner visibility of trusted jobs is for lifecycle and narrowing updates; a declaration
+    // replaces the whole definition, so it never converges onto operator authority.
+    return (
+      (Boolean(params.callerScope.manageAll) ||
+        params.job.scheduledToolPolicy?.mode !== "trusted") &&
+      cronJobMatchesCallerScope(params)
+    );
   }
 
   // Declarative convergence preserves the matched job's owner, so account identity must be part

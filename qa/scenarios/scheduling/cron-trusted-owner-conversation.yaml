@@ -11,7 +11,7 @@ scenario:
       gatewayPolicy:
         allow: [automations]
         actions:
-          automations: [list, get, update]
+          automations: [list, get, add, update]
         automations:
           scope: caller
   coverage:
@@ -27,6 +27,7 @@ scenario:
     - A prompt and tool edit from the owner conversation drops the job to account authority bound to that conversation.
     - A legacy owner record without an account cannot change what a trusted job runs or where its failures alert.
     - An owner conversion to a system event keeps the account ceiling after an operator restores an agent turn.
+    - A conversation declaration with the same key never replaces its trusted job.
   docsRefs:
     - docs/automation/cron-jobs.md
   codeRefs:
@@ -54,6 +55,7 @@ scenario:
       legacyNarrowMarker: QA-CRON-TRUSTED-OWNER-LEGACY-REFUSED
       realertMarker: QA-CRON-TRUSTED-OWNER-REALERT-REFUSED
       dormantMarker: QA-CRON-TRUSTED-OWNER-DORMANT
+      redeclareMarker: QA-CRON-TRUSTED-OWNER-REDECLARED
 
 flow:
   steps:
@@ -192,3 +194,26 @@ flow:
             message:
               expr: "`a dormant owner conversion lost its account ceiling: ${JSON.stringify({ dormant: dormantAfter.scheduledToolPolicy, restored: restoredJob.scheduledToolPolicy, tool: await lastToolOutput() })}`"
       detailsExpr: "`dormant policy=${dormantAfter.scheduledToolPolicy?.mode} restored policy=${restoredJob.scheduledToolPolicy?.mode}`"
+
+    - name: a conversation's declaration never replaces its trusted job
+      actions:
+        - set: declarationKey
+          value:
+            expr: "`qa-trusted-owner-${randomUUID().slice(0, 8)}`"
+        - set: keyedJob
+          value:
+            expr: "await env.gateway.call('cron.add', { agentId: 'qa', name: `qa-cron-trusted-keyed-${randomUUID()}`, declarationKey, enabled: true, deleteAfterRun: false, owner: { agentId: 'qa', sessionKey: ownerSessionKey, accountId: 'default' }, schedule: { kind: 'at', at: new Date(Date.now() + 10 * 60 * 1000).toISOString() }, sessionTarget: 'isolated', wakeMode: 'now', payload: { kind: 'agentTurn', message: 'Operator check-in.', toolsAllow: ['read'] }, delivery: { mode: 'none' } }, { timeoutMs: 30000 })"
+        - set: keyedBefore
+          value:
+            expr: "keyedJob.job ?? keyedJob"
+        - set: redeclareReply
+          value:
+            expr: "await ask(config.conversationId, `Trusted automation owner QA check: action=redeclare target=${declarationKey} marker=${config.redeclareMarker}`, config.redeclareMarker)"
+        - set: keyedAfter
+          value:
+            expr: "await env.gateway.call('cron.get', { id: keyedBefore.id }, { timeoutMs: 30000 })"
+        - assert:
+            expr: "keyedBefore?.scheduledToolPolicy?.mode === 'trusted' && keyedAfter.payload?.kind === 'agentTurn' && keyedAfter.payload?.message === 'Operator check-in.' && keyedAfter.scheduledToolPolicy?.mode === 'trusted' && !String((await lastToolOutput())[0] ?? '').includes('Invalid arguments')"
+            message:
+              expr: "`a conversation declaration replaced its trusted job: ${JSON.stringify({ before: keyedBefore?.scheduledToolPolicy, after: { payload: keyedAfter.payload, policy: keyedAfter.scheduledToolPolicy }, tool: await lastToolOutput() })}`"
+      detailsExpr: "`redeclare stored payload=${keyedAfter.payload?.kind} policy=${keyedAfter.scheduledToolPolicy?.mode} tool=${String((await lastToolOutput())[0] ?? '').replace(/\\s+/g, ' ').slice(0, 160)}`"

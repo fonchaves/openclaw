@@ -9,7 +9,7 @@ import { isConfiguredCommandOwner } from "../../auto-reply/command-auth.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { createCronStoreHarness } from "../../cron/service.test-harness.js";
 import { loadCronStore, saveCronStore } from "../../cron/store.js";
-import type { CronJob } from "../../cron/types.js";
+import type { CronJob, CronJobCreate } from "../../cron/types.js";
 import {
   claimAgentRunDelegatedAuthority,
   releaseAgentRunDelegatedAuthority,
@@ -20,6 +20,7 @@ import {
   mintCronCreatorAuthorityGrant,
   revokeCronCreatorAuthorityRunScope,
 } from "../cron-creator-authority-grant.js";
+import { cronJobMatchesDeclarationScope, readCronCallerScope } from "./cron-caller-scope.js";
 import { createReadService } from "./cron-read.test-support.js";
 import {
   cronAccountPolicy as policy,
@@ -357,6 +358,40 @@ describe("cron ownership access matrix", () => {
     }
     expect(violations).toEqual([]);
   }, 300_000);
+  it("never converges a conversation's declaration onto its trusted job", () => {
+    const callerScope = readCronCallerScope(createCronCallerClient("ops", "default", S_A));
+    const owner = { agentId: "ops", sessionKey: S_A, accountId: "default" };
+    const input: CronJobCreate = {
+      name: "replacement",
+      enabled: true,
+      declarationKey: "daily-check",
+      schedule: { kind: "every", everyMs: 60_000 },
+      sessionTarget: "main",
+      wakeMode: "now",
+      payload: { kind: "systemEvent", text: "replacement" },
+    };
+    const matches = (job: CronJob) =>
+      cronJobMatchesDeclarationScope({ job, input, callerScope, defaultAgentId: "ops" });
+    for (const legacyOwner of [owner, { agentId: "ops", sessionKey: S_A }]) {
+      const trustedJob = createCronJob({
+        agentId: "ops",
+        declarationKey: "daily-check",
+        owner: legacyOwner,
+        scheduledToolPolicy: { version: 1, mode: "trusted" },
+        payload: { kind: "agentTurn", message: "m", toolsAllow: ["read"] },
+      });
+      expect(matches(trustedJob)).toBe(false);
+    }
+    const accountJob = createCronJob({
+      agentId: "ops",
+      declarationKey: "daily-check",
+      owner,
+      scheduledToolPolicy: policy(S_A, "default"),
+      payload: { kind: "agentTurn", message: "m", toolsAllow: ["read"] },
+    });
+    expect(matches(accountJob)).toBe(true);
+  });
+
   it("lets the owner conversation pause or remove its trusted job and narrows other edits", async () => {
     const seedService = async (shape: Partial<CronJob>) => {
       const { storePath } = await makeStorePath();
