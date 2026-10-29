@@ -1,4 +1,5 @@
 import type { DeliveryContext } from "../utils/delivery-context.types.js";
+import type { NodeSystemRunEventSource } from "./node-registry.system-run.js";
 
 export type NodeInvokeParams = {
   nodeId: string;
@@ -17,6 +18,10 @@ export type NodeInvokeParams = {
   sessionKey?: string;
   /** Host-bound source conversation, independent of the model session or node payload. */
   turnSource?: DeliveryContext;
+  /** Host-only caller custody for delayed system.run notices; never forwarded to the node. */
+  prepareSystemRunEventSource?: (
+    sessionKey: string,
+  ) => Promise<NodeSystemRunEventSource | undefined>;
   /** Receives the id and armed hard deadline after a successful dispatch. */
   onDispatchReady?: (invokeId: string, deadlineAtMs?: number) => void;
   /** Prepares durable approval authority after transport preparation, before the final guard. */

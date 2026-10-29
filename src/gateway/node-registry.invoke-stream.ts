@@ -12,6 +12,7 @@ import { scheduleAbsoluteDeadline } from "../utils/absolute-deadline.js";
 import type { DeliveryContext } from "../utils/delivery-context.types.js";
 import type { NodeInvokeResult } from "./node-invoke.types.js";
 import { NODE_INVOKE_PAIRING_CHANGED_ABORT } from "./node-registry-private-token.js";
+import type { NodeSystemRunEventSource } from "./node-registry.system-run.js";
 
 /** A node may emit this only before invoking a handler or sending any progress. */
 export const NODE_INVOKE_NOT_READY = "NODE_NOT_READY";
@@ -21,6 +22,7 @@ export type PendingSystemRunEvent = {
   sessionKey?: string;
   invocationDeliveryContext?: DeliveryContext;
   timeoutMs?: number | null;
+  source?: NodeSystemRunEventSource;
 };
 
 export type PendingInvoke = {

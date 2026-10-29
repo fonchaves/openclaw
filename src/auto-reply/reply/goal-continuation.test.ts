@@ -249,104 +249,52 @@ describe("Goal continuation eligibility", () => {
     }
   });
   it.each([
-    { marker: "local", current: "local", expected: true },
-    { marker: "local", current: "worker", expected: false },
-    { marker: "worker", current: "local", expected: false },
-    { marker: "worker", current: "worker", expected: true },
+    ["localCodexGoal", "local", false, true],
+    ["localCodexGoal", "worker", false, false],
+    ["workerGoal", "local", false, false],
+    ["workerGoal", "worker", false, true],
+    ["localCodexGoal", "local", true, false],
   ] as const)(
-    "revalidates $marker Codex placement at admission when current is $current",
-    async ({ marker, current, expected }) => {
+    "checks %s Codex placement against %s (requires worker=%s)",
+    async (marker, current, requiresWorker, expected) => {
       workerPlacement.current.mockReturnValue({
-        agentId: "main",
+        ...localPlacement(identity.sessionId),
         sessionKey: "agent:main:goal",
-        sessionId: identity.sessionId,
         state: current === "local" ? "local" : "requested",
         executionMode: "remote-exec",
-        generation: 1,
-        turnClaim: null,
-        createdAtMs: 1,
-        updatedAtMs: 1,
-        stateChangedAtMs: 1,
-        environmentId: null,
-        activeOwnerEpoch: null,
-        workspaceBaseManifestRef: null,
-        remoteWorkspaceDir: null,
-        workerBundleHash: null,
-        lastTranscriptAckCursor: null,
-        lastLiveEventAckCursor: null,
-        terminalReason: null,
-        terminalAtMs: null,
-        recoveryError: null,
       });
-      const continuation = {
-        ...identity,
-        ...(marker === "worker"
-          ? { workerGoal: true as const }
-          : { localCodexGoal: true as const }),
-      };
       await expect(
         isGoalContinuationPlacementCurrent({
-          continuation,
+          continuation: { ...identity, [marker]: true },
           agentId: "main",
           sessionKey: "agent:main:goal",
           hasOperatorAuthority: true,
-          requiresWorker: false,
+          requiresWorker,
         }),
       ).resolves.toBe(expected);
     },
   );
-  it("rejects a queued local continuation when current policy requires a worker", async () => {
-    await expect(
-      isGoalContinuationPlacementCurrent({
-        continuation: { ...identity, localCodexGoal: true },
-        agentId: "main",
-        sessionKey: "agent:main:goal",
-        hasOperatorAuthority: true,
-        requiresWorker: true,
-      }),
-    ).resolves.toBe(false);
-  });
-  it("does not resume paused goals", () => {
+  it("checks current Goal, incarnation, stop and runtime facts before continuing", () => {
     const current = entry();
-    current.goal!.status = "paused";
-    expect(isGoalContinuationCurrent(identity, current)).toBe(false);
-  });
-  it("rejects replaced, cleared, reset, stopped and external-runtime sessions", () => {
-    const current = entry();
-    expect(isGoalContinuationCurrent(identity, current)).toBe(true);
     expect(isGoalContinuationCurrent(identity, undefined)).toBe(false);
-    expect(isGoalContinuationCurrent(identity, { ...current, goal: undefined })).toBe(false);
-    expect(isGoalContinuationCurrent(identity, { ...current, sessionId: "replacement" })).toBe(
-      false,
-    );
-    expect(
-      isGoalContinuationCurrent(identity, { ...current, lifecycleRevision: "revision-3" }),
-    ).toBe(false);
-    expect(isGoalContinuationCurrent(identity, { ...current, abortedLastRun: true })).toBe(false);
-    expect(isGoalContinuationCurrent(identity, { ...current, agentHarnessId: "codex" })).toBe(
-      false,
-    );
-    expect(
-      isGoalContinuationCurrent(
-        { ...identity, localCodexGoal: true },
-        { ...current, agentHarnessId: "codex" },
-      ),
-    ).toBe(true);
-    expect(isGoalContinuationCurrent(identity, { ...current, agentHarnessId: "external" })).toBe(
-      false,
-    );
-    expect(
-      isGoalContinuationCurrent(identity, {
-        ...current,
-        goal: { ...current.goal!, id: "new-goal" },
-      }),
-    ).toBe(false);
-    expect(
-      isGoalContinuationCurrent(identity, {
-        ...current,
-        goal: { ...current.goal!, updatedAt: 3000 },
-      }),
-    ).toBe(true);
+    for (const [patch, expected, continuation] of [
+      [{}, true],
+      [{ goal: undefined }, false],
+      [{ goal: { ...current.goal!, status: "paused" } }, false],
+      [{ sessionId: "replacement" }, false],
+      [{ lifecycleRevision: "revision-3" }, false],
+      [{ abortedLastRun: true }, false],
+      [{ agentHarnessId: "codex" }, false],
+      [{ agentHarnessId: "codex" }, true, { localCodexGoal: true }],
+      [{ agentHarnessId: "external" }, false],
+      [{ goal: { ...current.goal!, id: "new-goal" } }, false],
+      [{ goal: { ...current.goal!, updatedAt: 3000 } }, true],
+    ] satisfies Array<[Partial<SessionEntry>, boolean, { localCodexGoal: true }?]>) {
+      expect(
+        isGoalContinuationCurrent({ ...identity, ...continuation }, { ...current, ...patch }),
+        JSON.stringify(patch),
+      ).toBe(expected);
+    }
   });
   it("observes fresh token exhaustion before scheduling another turn", () => {
     const current = entry();
@@ -358,25 +306,20 @@ describe("Goal continuation eligibility", () => {
     expect(current.goal!.status).toBe("active");
   });
   it.each([
-    { aborted: true },
-    { yielded: true },
-    { continuationPending: true as const },
-    { timeoutPhase: "provider" as const },
-    { error: { kind: "hook_block" as const, message: "Blocked" } },
-    { pendingToolCalls: [{ id: "tool-1", name: "exec", arguments: "{}" }] },
-    { stopReason: "refusal" },
-  ])("preserves an existing continuation or failure owner: %j", async (meta) => {
+    { meta: { aborted: true } },
+    { meta: { yielded: true } },
+    { meta: { continuationPending: true as const } },
+    { meta: { timeoutPhase: "provider" as const } },
+    { meta: { error: { kind: "hook_block" as const, message: "Blocked" } } },
+    { meta: { pendingToolCalls: [{ id: "tool-1", name: "exec", arguments: "{}" }] } },
+    { meta: { stopReason: "refusal" } },
+    { didSendDeterministicApprovalPrompt: true },
+    { payloads: [{ text: "failed", isError: true }] },
+  ])("preserves an existing continuation, failure or approval owner: %j", async (result) => {
     const f = fixture();
-    f.params.result = { ...normal, meta: { ...normal.meta, ...meta } };
+    f.params.result = { ...normal, ...result, meta: { ...normal.meta, ...result.meta } };
     expect(await enqueueGoalContinuation(f.params)).toBe(false);
     expect(enqueueFollowupRun).not.toHaveBeenCalled();
-  });
-  it("does not nudge deterministic approval prompts or returned errors", async () => {
-    const f = fixture();
-    f.params.result = { ...normal, didSendDeterministicApprovalPrompt: true };
-    expect(await enqueueGoalContinuation(f.params)).toBe(false);
-    f.params.result = { ...normal, payloads: [{ text: "failed", isError: true }] };
-    expect(await enqueueGoalContinuation(f.params)).toBe(false);
   });
 });
 
@@ -744,33 +687,19 @@ describe("Goal return from committed child custody", () => {
   );
 
   it.each([
-    "paused",
-    "blocked",
-    "complete",
-    "usage_limited",
-    "budget_limited",
-    "cleared",
-    "replaced",
-    "reset",
-    "stopped",
-  ] as const)("rechecks %s after the command final and batch commit", async (change) => {
+    ...(["paused", "blocked", "complete", "usage_limited", "budget_limited"] as const).map(
+      (status) => ({ change: status, patch: { goal: { ...entry().goal!, status } } }),
+    ),
+    { change: "cleared", patch: { goal: undefined } },
+    { change: "replaced", patch: { goal: { ...entry().goal!, id: "new-goal" } } },
+    { change: "reset", patch: { lifecycleRevision: "new-revision" } },
+    { change: "stopped", patch: { abortedLastRun: true } },
+  ])("rechecks $change after the command final and batch commit", async ({ patch }) => {
     const f = retainedGoal();
     f.retain();
     f.operation.complete();
     f.publish();
-    const current = entry();
-    if (change === "cleared") {
-      current.goal = undefined;
-    } else if (change === "replaced") {
-      current.goal!.id = "new-goal";
-    } else if (change === "reset") {
-      current.lifecycleRevision = "new-revision";
-    } else if (change === "stopped") {
-      current.abortedLastRun = true;
-    } else {
-      current.goal!.status = change;
-    }
-    vi.mocked(readSessionEntryReadOnlyInWorker).mockResolvedValue(current);
+    vi.mocked(readSessionEntryReadOnlyInWorker).mockResolvedValue({ ...entry(), ...patch });
     await f.finish();
     expect(enqueueFollowupRun).not.toHaveBeenCalled();
   });
