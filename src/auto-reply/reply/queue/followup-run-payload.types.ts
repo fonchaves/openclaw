@@ -159,8 +159,8 @@ export type FollowupRunPayload = {
     scheduledAutomation?: ScheduledSessionAutomation;
     bootstrapContextMode?: GetReplyOptions["bootstrapContextMode"];
     internalEventExecution?: SessionEventExecution;
-    /** Explicit automatic-delivery suppression that outlives its source event occurrence. */
-    sessionEventDelivery?: false;
+    /** Event origin retained after detaching from its occurrence: no channel-turn authority. */
+    sessionEventOrigin?: { deliver?: false };
     agentId: string;
     agentDir: string;
     runtimePolicySessionKey?: string;

@@ -678,7 +678,7 @@ describe("deliverFollowupDecision", () => {
   it("keeps a silent source event's successor off every automatic route", async () => {
     const dispatcher = vi.fn(async (_payload: ReplyPayload) => {});
     const turn = createTurn();
-    turn.queued.run.sessionEventDelivery = false;
+    turn.queued.run.sessionEventOrigin = { deliver: false };
     deliveryState.routeReply.mockReset();
     deliveryState.routeReply.mockResolvedValue({ ok: true, delivered: true });
     deliveryState.followupRoute = { route: "origin" };

@@ -419,7 +419,7 @@ export async function deliverFollowupDecision(params: {
     logVerbose(`followup queue: delivery suppressed (${decision.reason})`);
     return { kind: "completed" as const, payloads: [] };
   }
-  if (turn.queued.run.sessionEventDelivery === false) {
+  if (turn.queued.run.sessionEventOrigin?.deliver === false) {
     logVerbose("followup queue: delivery suppressed by its silent source event");
     return { kind: "completed" as const, payloads: [] };
   }

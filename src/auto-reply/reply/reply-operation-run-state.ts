@@ -31,11 +31,11 @@ export function resolveReplySessionEventDelivery(
   options: object | undefined,
   run: {
     internalEventExecution?: Pick<SessionEventExecution, "deliver">;
-    sessionEventDelivery?: false;
+    sessionEventOrigin?: { deliver?: false };
   },
 ): false | undefined {
   return run.internalEventExecution?.deliver === false ||
-    run.sessionEventDelivery === false ||
+    run.sessionEventOrigin?.deliver === false ||
     resolveReplyOperationRunState(options)?.sessionEventDelivery === false
     ? false
     : undefined;
