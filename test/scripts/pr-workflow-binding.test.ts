@@ -68,6 +68,53 @@ function fixture() {
 }
 
 describe.skipIf(process.platform === "win32")("native workflow binding storage", () => {
+  it.each(["valid", "review", "tree", "snapshot", "predecessor", "parent order"])(
+    "validates successor history including its %s continuation",
+    (fault) => {
+      const f = fixture();
+      const previous = f.write(f.record);
+      const source = f.git(
+        ["commit-tree", `${f.source}^{tree}`, "-p", f.source],
+        "next workflow\n",
+      );
+      f.git(["update-ref", "refs/remotes/origin/main", source]);
+      const review = f.git(["hash-object", "-w", "--stdin"], "review bytes\n");
+      const snapshot = f.git(
+        ["hash-object", "-w", "--stdin"],
+        `.local/correction-review.json ${review}`,
+      );
+      const record = {
+        ...f.record,
+        version: 2,
+        source,
+        predecessor: previous,
+        continuation: {
+          head: f.source,
+          hostedHead: f.source,
+          tree: f.git(["rev-parse", `${f.source}^{tree}`]),
+          review,
+          snapshot,
+        },
+      };
+      if (fault === "review") record.continuation.review = source;
+      if (fault === "tree") record.continuation.tree = source;
+      if (fault === "snapshot") record.continuation.snapshot = review;
+      if (fault === "predecessor") record.predecessor = source;
+      const parents = [previous, source, f.source];
+      if (fault === "parent order") parents.reverse();
+      const next = f.write(record, parents, `100644 blob ${snapshot}\treview-snapshot\n`);
+      const result = f.run("workflow-read");
+      expect(result.status, result.stderr).toBe(fault === "valid" ? 0 : 1);
+      if (fault === "valid") {
+        expect(result.stdout).toBe(`${next}\t${source}\n`);
+        expect(f.run("workflow-history", previous, f.source).stdout).toBe(f.source);
+        expect(f.run("workflow-history", next, source).stdout).toBe(source);
+        expect(f.run("workflow-history", next, f.source).status).toBe(1);
+      }
+      expect(f.git(["rev-parse", ref])).toBe(next);
+    },
+  );
+
   it.each([
     ["writer@example.invalid:Org/repo.git", "other@example.invalid:Org/repo.git"],
     ["example.invalid:Org/repo.git", "other.invalid:Org/repo.git"],
