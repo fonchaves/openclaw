@@ -299,6 +299,12 @@ function reconcileScheduledToolPolicy(params: {
     }
     return;
   }
+  const callerPolicy = params.scheduledToolPolicy;
+  if (current?.mode === "trusted" && callerPolicy?.mode === "account") {
+    // An account-scoped owner edit narrows operator authority to that owner; it never inherits it.
+    stampScheduledToolPolicy(job, callerPolicy);
+    return;
+  }
   if (current) {
     job.scheduledToolPolicy = current;
     return;

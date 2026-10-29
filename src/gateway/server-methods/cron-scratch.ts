@@ -59,9 +59,18 @@ export const cronScratchHandlers: GatewayRequestHandlers = {
     validateCronScratchSetParams,
     async (
       { params, respond, context, client, sessionMutationCommitGuard, hasCurrentClientAuthority },
-      { jobId, callerScope },
+      { jobId, callerScope, job },
     ) => {
       const p = params;
+      if (callerScope && !callerScope.manageAll && job.scheduledToolPolicy?.mode === "trusted") {
+        // Scratch is appended to the run prompt, so a conversation may not write it under operator authority.
+        respondInvalidCronParams(
+          respond,
+          "cron.scratch.set",
+          "This automation runs with operator access, so only a Gateway owner or an operator can change its scratch.",
+        );
+        return;
+      }
       try {
         const commitGuard = resolveCronMutationCommitGuard(
           client,
