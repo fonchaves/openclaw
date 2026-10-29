@@ -13,15 +13,15 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join, resolve } from "node:path";
-import { test } from "node:test";
+import { afterEach, test } from "vitest";
 
 // Local regression for the standalone release-line security adaptation.
 const toolRoot = resolve(".github/release/clawhub-cli");
 const script = resolve("scripts/materialize-clawhub-cli.sh");
 const lockBytes = readFileSync(join(toolRoot, "package-lock.json"));
-const lock = JSON.parse(lockBytes);
+const lock = JSON.parse(lockBytes.toString("utf8"));
 const manifest = JSON.parse(readFileSync(join(toolRoot, "package.json"), "utf8"));
-const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
+const hash = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 
 test("ClawHub override, Undici metadata, and materializer hash agree", () => {
   assert.equal(manifest.dependencies.clawhub, "0.23.3");
@@ -40,9 +40,18 @@ test("ClawHub override, Undici metadata, and materializer hash agree", () => {
   );
 });
 
-function fixture(t) {
+const fixtureRoots = new Set<string>();
+
+afterEach(() => {
+  for (const root of fixtureRoots) {
+    rmSync(root, { recursive: true, force: true });
+  }
+  fixtureRoots.clear();
+});
+
+function fixture() {
   const root = mkdtempSync(join(tmpdir(), "clawhub-security-pin-"));
-  t.after(() => rmSync(root, { recursive: true, force: true }));
+  fixtureRoots.add(root);
   const trusted = join(root, "trusted");
   const bin = join(root, "bin");
   const destination = join(root, "install");
@@ -76,8 +85,8 @@ function fixture(t) {
   return { root, trusted, destination, output, run };
 }
 
-test("standalone materializer installs with lifecycle scripts disabled", (t) => {
-  const f = fixture(t);
+test("standalone materializer installs with lifecycle scripts disabled", () => {
+  const f = fixture();
   const result = f.run();
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(
@@ -96,8 +105,8 @@ test("standalone materializer installs with lifecycle scripts disabled", (t) => 
   );
 });
 
-test("changed lock fails before npm or CLI output", (t) => {
-  const f = fixture(t);
+test("changed lock fails before npm or CLI output", () => {
+  const f = fixture();
   writeFileSync(join(f.trusted, "package-lock.json"), Buffer.concat([lockBytes, Buffer.from(" ")]));
   const result = f.run();
   assert.notEqual(result.status, 0);
