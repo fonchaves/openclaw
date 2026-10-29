@@ -36,7 +36,9 @@ it.each(["uncertain", "normal"] as const)(
     expect(result).toMatchObject({ code: 7, signal: null, killed: false, termination: "exit" });
     expect([result.stdout, result.stderr]).toEqual([Buffer.from("out"), Buffer.from("err")]);
     expect(hasCommandProcessCleanupError(result.error)).toBe(cleanup === "uncertain");
-    if (cleanup === "normal") expect(result.error).toBeUndefined();
+    if (cleanup === "normal") {
+      expect(result.error).toBeUndefined();
+    }
   },
 );
 
@@ -52,8 +54,11 @@ it.each(["uncertain", "normal"] as const)(
     const result = await runCommandBuffered(["fixture"]);
     expect(result.termination).toBe("error");
     expect(hasCommandProcessCleanupError(result.error)).toBe(cleanup === "uncertain");
-    if (cleanup === "uncertain") expect(result.error?.cause).toBe(failure);
-    else expect(result.error).toBe(failure);
+    if (cleanup === "uncertain") {
+      expect(result.error?.cause).toBe(failure);
+    } else {
+      expect(result.error).toBe(failure);
+    }
   },
 );
 
