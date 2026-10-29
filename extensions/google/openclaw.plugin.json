@@ -321,6 +321,11 @@
     "suppressions": [
       {
         "provider": "google",
+        "model": "gemini-2.5-flash",
+        "reason": "Google discontinued Gemini 2.5 Flash for new users. Use google/gemini-3.8-flash."
+      },
+      {
+        "provider": "google",
         "model": "gemini-1.5-flash",
         "reason": "Google shut down Gemini 1.5 Flash on 2025-09-29. Use google/gemini-2.5-flash."
       },

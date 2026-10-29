@@ -27,7 +27,7 @@ export const GOOGLE_GEMINI_PROVIDER_HOOKS = {
       });
     }),
   // Google-family gRPC status codes stay with the shared Gemini provider hook.
-  classifyFailoverReason: ({ code }: ProviderFailoverErrorContext) => {
+  classifyFailoverReason: ({ code, status, errorMessage }: ProviderFailoverErrorContext) => {
     switch (code?.trim().toUpperCase()) {
       case "UNAVAILABLE":
         return "overloaded" as const;
@@ -35,8 +35,18 @@ export const GOOGLE_GEMINI_PROVIDER_HOOKS = {
         return "timeout" as const;
       case "INTERNAL":
         return "server_error" as const;
+      case "NOT_FOUND":
+        return "model_not_found" as const;
       default:
-        return undefined;
+        break;
     }
+    if (
+      status === 404 ||
+      (typeof errorMessage === "string" &&
+        errorMessage.toLowerCase().includes("no longer available to new users"))
+    ) {
+      return "model_not_found" as const;
+    }
+    return undefined;
   },
 };

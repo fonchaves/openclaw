@@ -74,6 +74,21 @@ describe("google default model", () => {
     expect(applied.next.agents?.defaults?.model).toEqual({ primary: "google/gemini-4-argon" });
   });
 
+  it("normalizes retired Gemini 2.5 Flash model refs on setup re-run", () => {
+    const applied = applyGoogleGeminiModelDefault({
+      agents: {
+        defaults: {
+          model: {
+            primary: GOOGLE_GEMINI_DEFAULT_MODEL,
+            fallbacks: ["google/gemini-2.5-flash"],
+          },
+        },
+      },
+    } as OpenClawConfig);
+
+    expect(applied.changed).toBe(true);
+  });
+
   it("no-ops when already on the target default", () => {
     const cfg = {
       agents: { defaults: { model: { primary: GOOGLE_GEMINI_DEFAULT_MODEL } } },
