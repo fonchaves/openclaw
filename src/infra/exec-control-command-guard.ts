@@ -9,6 +9,7 @@ import {
 } from "@openclaw/normalization-core/string-normalization";
 import { splitShellArgs } from "../utils/shell-argv.js";
 import { resolvePathViaExistingAncestorSync } from "./boundary-path.js";
+import { getRootOptionAwareCommandPath } from "./cli-root-options.js";
 import { buildCommandPayloadArgvCandidates } from "./command-analysis/risks.js";
 import {
   CommandExplanationWorkLimitError,
@@ -29,6 +30,7 @@ type UnsafeExecControlShellCommandKind =
 type ExecControlShellCommandContext = {
   stateDir?: string;
   workdir?: string;
+  host?: string;
 };
 
 const SQLITE_OPTIONS_WITH_VALUES = new Map<string, number>([
@@ -133,7 +135,8 @@ function parseOpenClawStateMutationShellCommand(
   if (normalizeCommandBaseName(openclawArgv[0]) !== "openclaw") {
     return null;
   }
-  const subcommand = normalizeLowercaseStringOrEmpty(openclawArgv[1]);
+  const path = getRootOptionAwareCommandPath(["node", ...openclawArgv], 1);
+  const subcommand = normalizeLowercaseStringOrEmpty(path[0]);
   if (subcommand === "cron") {
     return "cron";
   }
@@ -319,6 +322,7 @@ export async function detectUnsafeExecControlShellCommand(
     });
   })();
   const controlCandidates = uniqueStrings(argvCandidates.map((argv) => argv.join(" ")));
+  const isGatewayContext = !context.host || context.host === "gateway";
   for (const candidate of controlCandidates) {
     if (isExecApprovalShellCommand(candidate)) {
       return "approve";
@@ -326,15 +330,17 @@ export async function detectUnsafeExecControlShellCommand(
     if (parseOpenClawChannelsLoginShellCommand(candidate)) {
       return "channel-login";
     }
-    const stateMutation = parseOpenClawStateMutationShellCommand(candidate);
-    if (stateMutation === "cron") {
-      return "cron-cli";
-    }
-    if (stateMutation === "automations") {
-      return "automations-cli";
-    }
-    if (stateMutation === "message") {
-      return "message-cli";
+    if (isGatewayContext) {
+      const stateMutation = parseOpenClawStateMutationShellCommand(candidate);
+      if (stateMutation === "cron") {
+        return "cron-cli";
+      }
+      if (stateMutation === "automations") {
+        return "automations-cli";
+      }
+      if (stateMutation === "message") {
+        return "message-cli";
+      }
     }
   }
   for (const candidateArgv of argvCandidates) {
@@ -355,8 +361,11 @@ function rejectIncompleteCommandAnalysis(
   }
 }
 
-export async function rejectUnsafeExecControlShellCommand(command: string): Promise<void> {
-  const unsafeKind = await detectUnsafeExecControlShellCommand(command);
+export async function rejectUnsafeExecControlShellCommand(
+  command: string,
+  context: ExecControlShellCommandContext = {},
+): Promise<void> {
+  const unsafeKind = await detectUnsafeExecControlShellCommand(command, context);
   rejectIncompleteCommandAnalysis(unsafeKind);
   if (unsafeKind === "approve") {
     throw new Error(
@@ -388,7 +397,7 @@ export async function rejectUnsafeExecControlShellCommand(command: string): Prom
       [
         "exec cannot run `openclaw message` commands directly.",
         "Spawning the openclaw CLI inside Gateway sessions causes SQLite lease lock contention and memory exhaustion.",
-        "Use the in-process `message` tool (e.g. `await message({ action: 'send', target: ..., text: ... })`) instead.",
+        "Use the in-process `message` tool (e.g. `await message({ action: 'send', target: ..., message: ... })`) instead.",
       ].join(" "),
     );
   }
