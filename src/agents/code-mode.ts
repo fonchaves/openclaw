@@ -109,8 +109,14 @@ function renderCodeModeCatalogIndex(lines: readonly string[], total: number): st
 }
 
 function formatCodeModeCatalogIndex(bindings: readonly CodeModeCatalogBinding[]): string {
+  const isPriorityTool = (entry: CodeModeCatalogBinding) =>
+    (entry.id === `openclaw:core:${entry.name}` && isCoreCodingSurfaceToolName(entry.name)) ||
+    entry.name === "automations" ||
+    entry.name === "cron" ||
+    entry.name === "message";
+
   const priority = (entry: CodeModeCatalogBinding) =>
-    entry.id === `openclaw:core:${entry.name}` && isCoreCodingSurfaceToolName(entry.name)
+    isPriorityTool(entry)
       ? 0
       : entry.output
         ? 1

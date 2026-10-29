@@ -26,4 +26,13 @@ describe("exec control command guard", () => {
       /exceeds the command explanation work limit/,
     );
   });
+
+  it.each([
+    ["openclaw cron --help", "cron-cli", /exec cannot run `openclaw cron` commands directly/],
+    ["openclaw automations create --at '2m'", "automations-cli", /exec cannot run `openclaw automations` commands directly/],
+    ["npx openclaw message send --target 123", "message-cli", /exec cannot run `openclaw message` commands directly/],
+  ])("rejects direct CLI state mutation commands: %s", async (command, expectedKind, expectedError) => {
+    await expect(detectUnsafeExecControlShellCommand(command)).resolves.toBe(expectedKind);
+    await expect(rejectUnsafeExecControlShellCommand(command)).rejects.toThrow(expectedError);
+  });
 });

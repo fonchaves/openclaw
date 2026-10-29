@@ -20,6 +20,9 @@ import { isPathInside } from "./path-guards.js";
 type UnsafeExecControlShellCommandKind =
   | "approve"
   | "channel-login"
+  | "cron-cli"
+  | "automations-cli"
+  | "message-cli"
   | "live-state-sqlite"
   | "incomplete-analysis";
 
@@ -117,6 +120,30 @@ function parseOpenClawChannelsLoginShellCommand(raw: string): boolean {
     (openclawArgv[1] === "channels" || openclawArgv[1] === "channel") &&
     openclawArgv[2] === "login"
   );
+}
+
+function parseOpenClawStateMutationShellCommand(
+  raw: string,
+): "cron" | "automations" | "message" | null {
+  const argv = splitShellArgs(raw);
+  if (!argv) {
+    return null;
+  }
+  const openclawArgv = stripOpenClawPackageRunner(argv);
+  if (normalizeCommandBaseName(openclawArgv[0]) !== "openclaw") {
+    return null;
+  }
+  const subcommand = normalizeLowercaseStringOrEmpty(openclawArgv[1]);
+  if (subcommand === "cron") {
+    return "cron";
+  }
+  if (subcommand === "automations" || subcommand === "automation") {
+    return "automations";
+  }
+  if (subcommand === "message" || subcommand === "messages") {
+    return "message";
+  }
+  return null;
 }
 
 function parseSqliteOpenCommandDatabaseToken(command: string): string | null {
@@ -299,6 +326,16 @@ export async function detectUnsafeExecControlShellCommand(
     if (parseOpenClawChannelsLoginShellCommand(candidate)) {
       return "channel-login";
     }
+    const stateMutation = parseOpenClawStateMutationShellCommand(candidate);
+    if (stateMutation === "cron") {
+      return "cron-cli";
+    }
+    if (stateMutation === "automations") {
+      return "automations-cli";
+    }
+    if (stateMutation === "message") {
+      return "message-cli";
+    }
   }
   for (const candidateArgv of argvCandidates) {
     if (targetsLiveStateSqliteDatabase(candidateArgv, context)) {
@@ -334,6 +371,24 @@ export async function rejectUnsafeExecControlShellCommand(command: string): Prom
       [
         "exec cannot run interactive OpenClaw channel login commands.",
         "Run `openclaw channels login` in a terminal on the gateway host, or use the channel-specific login agent tool when available (for WhatsApp: `whatsapp_login`).",
+      ].join(" "),
+    );
+  }
+  if (unsafeKind === "cron-cli" || unsafeKind === "automations-cli") {
+    throw new Error(
+      [
+        `exec cannot run \`openclaw ${unsafeKind === "cron-cli" ? "cron" : "automations"}\` commands directly.`,
+        "Spawning the openclaw CLI inside Gateway sessions causes SQLite lease lock contention and memory exhaustion.",
+        "Use the in-process `automations` tool (e.g. `await automations({ action: 'add', job: { ... } })`) or `cron` tool instead.",
+      ].join(" "),
+    );
+  }
+  if (unsafeKind === "message-cli") {
+    throw new Error(
+      [
+        "exec cannot run `openclaw message` commands directly.",
+        "Spawning the openclaw CLI inside Gateway sessions causes SQLite lease lock contention and memory exhaustion.",
+        "Use the in-process `message` tool (e.g. `await message({ action: 'send', target: ..., text: ... })`) instead.",
       ].join(" "),
     );
   }
