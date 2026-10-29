@@ -112,7 +112,57 @@ function expectExit(result: ReturnType<typeof spawnSync>, status: number) {
   expect(result.status, `${String(result.stdout)}${String(result.stderr)}`).toBe(status);
 }
 
-function gitFault(f: ReturnType<typeof fixture>, phase: "before CAS" | "after CAS" | "race") {
+function verifyPublishedMerge(f: ReturnType<typeof fixture>) {
+  const observation = {
+    ...JSON.parse(f.readLocal("pr-meta.json").toString()),
+    headRefOid: f.hosted,
+    isDraft: false,
+  };
+  return spawnSync(
+    process.platform === "darwin" ? "/bin/bash" : "bash",
+    [
+      "-c",
+      `set -euo pipefail
+script_parent_dir="$1/scripts"
+for owner in worktree common gates push review prepare-core merge; do
+  source "$script_parent_dir/pr-lib/$owner.sh"
+done
+PR_MAIN_SHA="$2"
+# Reuse the already entered native checkout. Only external observations are
+# fixture responses; merge's review, alias, gate and source guards stay real.
+enter_worktree() { :; }
+mark_pr_operation_side_effects_started() { :; }
+refresh_main_snapshot() { :; }
+fetch_pr_head() {
+  test "$2" = "$(git -C "$FIXTURE_REPO" rev-parse topic)" || return 1
+  git update-ref "$3" "$2"
+  PR_HEAD_OBSERVATION="$4"
+}
+merge_read() {
+  test "$1" = checks && test "$PREP_HEAD_SHA" = "$(git -C "$FIXTURE_REPO" rev-parse topic)" || return 1
+  printf '%s\\n' "$PREP_HEAD_SHA" >.local/merge-check-target
+  printf '%s\\n' '{"transport":"graphql","payload":[{"name":"openclaw/ci-gate","bucket":"pass","state":"SUCCESS"}]}'
+}
+merge_verify 42 "$3"
+`,
+      "fixture-merge-admission",
+      f.repo,
+      f.incoming,
+      JSON.stringify({
+        replacementHead: "",
+        autoMergeRequested: true,
+        qualifiedRefusal: false,
+        observation,
+      }),
+    ],
+    { cwd: f.worktree, env: f.env, encoding: "utf8" },
+  );
+}
+
+function gitFault(
+  f: ReturnType<typeof fixture>,
+  phase: "before CAS" | "after CAS" | "race" | "lock race",
+) {
   const realGit = spawnSync("sh", ["-c", "command -v git"], {
     env: f.env,
     encoding: "utf8",
@@ -121,11 +171,26 @@ function gitFault(f: ReturnType<typeof fixture>, phase: "before CAS" | "after CA
   writeFileSync(
     probe,
     `#!/usr/bin/env python3
-import os,subprocess,sys
+import json,os,subprocess,sys,uuid
 args=sys.argv[1:]
 if args[-3:] == ['update-ref','--no-deref','--stdin']:
  data=sys.stdin.buffer.read()
  if ${JSON.stringify("update " + bindingRef + " ")}.encode() in data:
+  if ${JSON.stringify(phase)} == 'lock race':
+   git=[${JSON.stringify(realGit)},'-C',${JSON.stringify(f.repo)}]
+   lock=${JSON.stringify(lockRef)}
+   admitted=next(line.split()[2] for line in data.decode().splitlines() if line.startswith('verify '+lock+' '))
+   assert subprocess.check_output([*git,'rev-parse',lock]).decode().strip() == admitted
+   payload=subprocess.check_output([*git,'cat-file','blob',admitted]).decode()
+   rows=payload.splitlines()
+   assert len(rows) == 6 and rows[:2] == ['version=3','state=active']
+   assert rows[-1].startswith('token=')
+   rows[-1]='token='+str(uuid.uuid4())
+   replacement=subprocess.check_output([*git,'hash-object','-w','--stdin'],input=('\\n'.join(rows)+'\\n').encode()).decode().strip()
+   subprocess.check_call([*git,'update-ref','--no-deref',lock,replacement,admitted])
+   result=subprocess.run([${JSON.stringify(realGit)},*args],input=data)
+   open(${JSON.stringify(join(f.root, "fault-reached"))},'w').write(json.dumps({'admitted':admitted,'replacement':replacement,'transactionExit':result.returncode}))
+   sys.exit(result.returncode)
   open(${JSON.stringify(join(f.root, "fault-reached"))},'w').write(${JSON.stringify(phase)})
   ${phase === "race" ? `subprocess.check_call([${JSON.stringify(realGit)},'-C',${JSON.stringify(f.repo)},'update-ref',${JSON.stringify(bindingRef)},${JSON.stringify(f.head)}])` : "pass"}
   ${phase === "after CAS" || phase === "race" ? `result=subprocess.run([${JSON.stringify(realGit)},*args],input=data); ${phase === "race" ? "sys.exit(result.returncode)" : "result.check_returncode()"}` : "pass"}
@@ -183,8 +248,63 @@ describePosix("correction-only workflow succession", () => {
         expect(f.git(f.repo, "rev-parse", "topic")).toBe(f.hosted);
       }
       f.unchanged();
+      expectExit(f.run("prepare-gates"), 0);
+      f.unchanged();
+      const gates = f.readLocal("gates.env").toString();
+      expect(gates).toContain(`HOSTED_GATES_TARGET_HEAD_SHA=${f.hosted}\n`);
+      expect(gates).not.toMatch(/VERIFIED|PASSED|FULL_GATES|REMOTE_GATES/u);
+      expectExit(f.run("prepare-push"), 0);
+      expect(f.git(f.repo, "rev-parse", "topic")).toBe(f.hosted);
+      expect(f.prepGit("rev-parse", "HEAD")).toBe(f.head);
+      expect(f.prepGit("hash-object", "--no-filters", f.local("correction-review.json"))).toBe(
+        f.review,
+      );
+      expect(f.readLocal("prep.env").toString()).toContain(`LOCAL_PREP_HEAD_SHA=${f.head}\n`);
+      expect(f.readLocal("prep.env").toString()).toContain(`PREP_HEAD_SHA=${f.hosted}\n`);
+      expect(f.git(f.repo, "rev-parse", bindingRef)).toBe(next);
+      expectExit(verifyPublishedMerge(f), 0);
+      expect(f.readLocal("merge-check-target").toString()).toBe(`${f.hosted}\n`);
+      console.info("successor authority proof", {
+        outcome: "allowed",
+        baseline,
+        predecessor: f.binding,
+        successor: next,
+        local: f.head,
+        hosted: f.hosted,
+        gateTarget: f.hosted,
+        mergeChecksTarget: f.readLocal("merge-check-target").toString().trim(),
+      });
     },
   );
+
+  it("refuses the final binding write after admitted operation ownership is replaced", () => {
+    const f = fixture();
+    const previousArchives = new Set(readdirSync(join(f.worktree, ".local")));
+    const result = f.transition(gitFault(f, "lock race"));
+    const trace = JSON.parse(readFileSync(join(f.root, "fault-reached"), "utf8"));
+    expect(trace.transactionExit).not.toBe(0);
+    expect(result.status, result.stdout + result.stderr).not.toBe(0);
+    expect(trace.replacement).not.toBe(trace.admitted);
+    expect(f.git(f.repo, "rev-parse", lockRef)).toBe(trace.replacement);
+    expect(f.git(f.repo, "rev-parse", bindingRef)).toBe(f.binding);
+    f.unchanged();
+    f.expectAbsent("gates.env");
+    const archives = readdirSync(join(f.worktree, ".local")).filter(
+      (name) => name.startsWith("prep-evidence.") && !previousArchives.has(name),
+    );
+    expect(archives).toHaveLength(1);
+    expect(readFileSync(f.local(`${archives[0]}/gates.env`)).equals(f.originalGate)).toBe(true);
+    expect(readFileSync(f.local(`${archives[0]}/prep.env`)).equals(f.readLocal("prep.env"))).toBe(
+      true,
+    );
+    console.info("successor authority proof", {
+      outcome: "replaced-lock-refused",
+      ...trace,
+      wrapperExit: result.status,
+      retainedBinding: f.git(f.repo, "rev-parse", bindingRef),
+      retainedLock: f.git(f.repo, "rev-parse", lockRef),
+    });
+  });
 
   it.each([
     "binding",
