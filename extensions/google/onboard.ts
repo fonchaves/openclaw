@@ -11,8 +11,6 @@ const RETIRED_GOOGLE_GEMINI_MODEL_REFS = new Set([
   "gemini-3-pro-preview",
   "google/gemini-3-pro",
   "google/gemini-3-pro-preview",
-  "gemini-2.5-flash",
-  "google/gemini-2.5-flash",
 ]);
 
 function isRetiredGeminiModelRef(value: string): boolean {
@@ -20,11 +18,7 @@ function isRetiredGeminiModelRef(value: string): boolean {
   if (RETIRED_GOOGLE_GEMINI_MODEL_REFS.has(modelRef)) {
     return true;
   }
-  return (
-    modelRef.endsWith("/gemini-3-pro") ||
-    modelRef.endsWith("/gemini-3-pro-preview") ||
-    modelRef.endsWith("/gemini-2.5-flash")
-  );
+  return modelRef.endsWith("/gemini-3-pro") || modelRef.endsWith("/gemini-3-pro-preview");
 }
 
 function hasRetiredGeminiDefaultModelRefs(cfg: OpenClawConfig): boolean {
