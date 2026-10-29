@@ -23,7 +23,7 @@ const cases = [
   ],
 ];
 for (const [label, header, expected] of cases) {
-  test("inbound consumers preserve sender identity: " + label, async () => {
+  await test("inbound consumers preserve sender identity: " + label, async () => {
     for (const { name, parser } of consumers) {
       const parsed = parser(header, { flatten: true });
       assert.equal(parsed.length, 1, name);
@@ -40,7 +40,7 @@ for (const [label, header, expected] of cases) {
     assert.equal(senders[0].address, expected);
   });
 }
-test("mailauth authenticates the same nested-comment sender domain", async () => {
+await test("mailauth authenticates the same nested-comment sender domain", async () => {
   const raw = Buffer.from(
     ["From: " + cases[0][1], "To: reader@example.com", "", "hello"].join(
       String.fromCharCode(13, 10),
