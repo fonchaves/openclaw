@@ -206,7 +206,7 @@ export class NodeSystemRunEvents {
       ...event,
       expiresAtMs: authorizedSystemRunEventExpiresAt(event.timeoutMs),
     };
-    if (authorized.expiresAtMs !== null) {
+    if (authorized.source && authorized.expiresAtMs !== null) {
       authorized.expiryTimer = setTimeout(
         () => this.forget(authorized),
         Math.max(0, authorized.expiresAtMs - Date.now()),

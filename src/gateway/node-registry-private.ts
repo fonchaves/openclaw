@@ -255,9 +255,10 @@ async function invokeNodeRegistryCore(
     }
   }
   const dispatchNode = node;
-  let source = systemRunEvent
-    ? await params.prepareSystemRunEventSource?.(systemRunEvent.sessionKey ?? "node")
-    : undefined;
+  let source =
+    systemRunEvent && params.prepareSystemRunEventSource
+      ? await params.prepareSystemRunEventSource(systemRunEvent.sessionKey ?? "node")
+      : undefined;
   if (systemRunEvent && source) {
     systemRunEvent.source = source;
   }
