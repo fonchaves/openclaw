@@ -27,7 +27,6 @@ import {
 import { createNativeSsoProcessor, createSigninEvent } from "./monitor-sso.test-helpers.js";
 import { monitorMSTeamsProvider } from "./monitor.js";
 import type { MSTeamsPollStore } from "./polls.js";
-import { MSTEAMS_UNMATCHABLE_ALLOW_ENTRY } from "./resolve-allowlist.js";
 
 async function waitForMSTeamsTestState(assertion: () => void | Promise<void>): Promise<void> {
   await routeState.ready.promise;
