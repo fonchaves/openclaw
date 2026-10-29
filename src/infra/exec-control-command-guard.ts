@@ -135,8 +135,8 @@ function parseOpenClawStateMutationShellCommand(
   if (normalizeCommandBaseName(openclawArgv[0]) !== "openclaw") {
     return null;
   }
-  const path = getRootOptionAwareCommandPath(["node", ...openclawArgv], 1);
-  const subcommand = normalizeLowercaseStringOrEmpty(path[0]);
+  const commandPath = getRootOptionAwareCommandPath(["node", ...openclawArgv], 1);
+  const subcommand = normalizeLowercaseStringOrEmpty(commandPath[0]);
   if (subcommand === "cron") {
     return "cron";
   }

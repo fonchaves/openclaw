@@ -116,11 +116,7 @@ function formatCodeModeCatalogIndex(bindings: readonly CodeModeCatalogBinding[])
     entry.name === "message";
 
   const priority = (entry: CodeModeCatalogBinding) =>
-    isPriorityTool(entry)
-      ? 0
-      : entry.output
-        ? 1
-        : 2;
+    isPriorityTool(entry) ? 0 : entry.output ? 1 : 2;
   const lines = bindings
     // Keep the same core file/shell contracts visible as Tool Search, even without
     // declared outputs. Otherwise catalog growth hides their input argument names.

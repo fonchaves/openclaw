@@ -302,12 +302,7 @@ describe("Code Mode catalog and model-visible surface", () => {
       pluginTool("cron", "Manage cron", pluginId),
       pluginTool("message", "Send message", pluginId),
     ]);
-    expectFragments(index, [
-      "additional tools omitted",
-      "- automations",
-      "- cron",
-      "- message",
-    ]);
+    expectFragments(index, ["additional tools omitted", "- automations", "- cron", "- message"]);
   });
 
   it("skips a single oversized entry instead of blanking the whole index", () => {
