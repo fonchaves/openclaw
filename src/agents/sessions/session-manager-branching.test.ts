@@ -126,6 +126,8 @@ it.each(["memory", "sqlite"].flatMap((mode) => [3, 4].map((version) => ({ mode, 
     ];
     expect(manager.getSessionId()).not.toBe(scope.sessionId);
     expect(manager.getPersistedEntries()).toEqual(expected);
+    // The source transcript keeps counting the copied path.
+    expect(manager.getHeader()?.inheritedThrough).toBe("reply");
     expect(manager.getLabel("user")).toBe("named");
     expect(manager.getEntry("abandoned")).toBeUndefined();
     if (mode === "sqlite") {

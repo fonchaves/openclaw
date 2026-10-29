@@ -94,6 +94,10 @@ export function planSessionMessageCut(
     cwd: readTranscriptHeaderCwd(events),
     sessionId: nextSessionId,
     version: findSessionTranscriptHeader(events)?.version ?? MIN_READABLE_SESSION_VERSION,
+    // Every copied event stays counted in the source transcript.
+    inheritedThrough:
+      (params.mode === "fork" && cut ? readLastEventId(cut.prefix) : readLastEventId(events)) ??
+      undefined,
   });
   const nextEvents =
     params.mode === "fork" && cut

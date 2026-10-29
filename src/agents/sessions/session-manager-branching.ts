@@ -151,6 +151,7 @@ export class SessionManagerBranching extends SessionManagerMetadata {
         timestamp,
         cwd: this.cwd,
         parentSession: persistenceTarget ? previousSessionId : undefined,
+        inheritedThrough: branchPath.tailId ?? undefined,
       };
       const pathEntryIds = new Set(branchPath.entries.map((entry) => entry.id));
       const labelEntries: LabelEntry[] = [];

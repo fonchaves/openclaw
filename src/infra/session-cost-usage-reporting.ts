@@ -211,18 +211,27 @@ export async function loadSessionUsageTimeSeries(
     const agentDir = resolveAgentDir(scoped.config ?? {}, scoped.agentId);
     const resolveCost = createUsageCostResolver({ config: scoped.config, agentDir });
 
+    // Copied history (see dropInheritedTranscriptEvents) stays charted in its source session.
+    let inheritedThrough: string | undefined;
+    let inheritedPoints = 0;
     for await (const record of readTranscriptRecords(sessionFile)) {
+      if (record.type === "session" && typeof record.inheritedThrough === "string") {
+        inheritedThrough = record.inheritedThrough;
+      }
       const entry = await parseUsageCostTranscriptEntryAsync(record, resolveCost, scoped.config);
       const timestamp = entry?.timestamp?.getTime();
-      if (!entry?.usage || !timestamp) {
-        continue;
+      if (entry?.usage && timestamp) {
+        points.push({
+          timestamp,
+          ...computeUsageTokenTotals(entry.usage),
+          cost: entry.costTotal ?? 0,
+        });
       }
-      points.push({
-        timestamp,
-        ...computeUsageTokenTotals(entry.usage),
-        cost: entry.costTotal ?? 0,
-      });
+      if (inheritedThrough !== undefined && record.id === inheritedThrough) {
+        inheritedPoints = points.length;
+      }
     }
+    points = points.slice(inheritedPoints);
 
     points.sort((a, b) => a.timestamp - b.timestamp);
 

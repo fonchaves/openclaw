@@ -1,6 +1,13 @@
 import path from "node:path";
+import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { expect, it } from "vitest";
 import { formatSqliteSessionFileMarker } from "../config/sessions/legacy-sqlite-marker.js";
+import {
+  buildForkedChildTranscriptEvents,
+  resolveParentForkSourceTranscript,
+} from "../config/sessions/session-accessor.sqlite-parent-fork.js";
+import { planSessionMessageCut } from "../config/sessions/session-message-cut-plan.js";
+import { createSessionTranscriptHeader } from "../config/sessions/transcript-header.js";
 import type { UsageCostRollupEntry } from "./session-cost-usage-rollup-codec.js";
 import { scanUsageCostRollupInWorker } from "./session-cost-usage-worker-refresh.js";
 
@@ -180,3 +187,64 @@ it("aggregates duplicate-ID paths in selected ancestry order when sequence numbe
     Object.values(result.rollup.buckets).find((bucket) => bucket.latency.count > 0)?.latency,
   ).toMatchObject({ count: 1, min: 1000, max: 1000, sum: 1000 });
 });
+
+it.each(["rewind", "fork", "parent fork"] as const)(
+  "counts history copied by a %s once, in its source transcript",
+  async (mode) => {
+    const user = (id: string, parentId: string | null) => ({
+      type: "message",
+      id,
+      parentId,
+      timestamp: new Date(timestamp).toISOString(),
+      message: { role: "user", content: `${id} question` },
+    });
+    const answer = (id: string, parentId: string, tokens: number) => {
+      const { event } = makeRow(0, id, parentId, tokens);
+      const message = { ...(event.message as Record<string, unknown>), stopReason: "stop" };
+      return {
+        ...event,
+        message: { ...message, content: [{ type: "text", text: `${id} answer` }] },
+      };
+    };
+    const source = [
+      createSessionTranscriptHeader({ sessionId: "source" }),
+      user("u1", null),
+      answer("a1", "u1", 10),
+      user("u2", "a1"),
+      answer("a2", "u2", 20),
+    ];
+    let copy: unknown[];
+    if (mode === "parent fork") {
+      const forkSource = resolveParentForkSourceTranscript(source, "last-completed");
+      expect(forkSource).not.toBeNull();
+      copy = buildForkedChildTranscriptEvents({
+        parentSessionFile: "source",
+        source: forkSource!,
+        targetSessionId: "copy",
+      });
+    } else {
+      const entry = { sessionId: "source", lifecycleRevision: "r1", updatedAt: timestamp };
+      const plan = planSessionMessageCut(entry, source, {
+        mode,
+        entryId: "u2",
+        expectedState: { sessionId: "source", lifecycleRevision: "r1" },
+        sourceKey: "agent:main:source",
+        canonicalSourceKey: "agent:main:source",
+        targetKey: "agent:main:copy",
+      });
+      expect(plan.status).toBe("prepared");
+      copy = plan.status === "prepared" ? plan.events : [];
+    }
+    // A new turn continues from the copy's visible leaf.
+    const rows = [
+      ...copy.filter(isRecord),
+      answer("new", mode === "parent fork" ? "a2" : "a1", 5),
+      // Stored transcripts keep the session header at seq 0.
+    ].map((event, index) => ({ seq: index, event }));
+    const result = await scan(rows);
+    // The copy counts only its new turn; the source transcript keeps counting a1 and a2.
+    expect(
+      Object.values(result.rollup.buckets).reduce((sum, b) => sum + b.totals.totalTokens, 0),
+    ).toBe(5);
+  },
+);

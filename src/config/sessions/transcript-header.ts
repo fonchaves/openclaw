@@ -11,6 +11,8 @@ export function createSessionTranscriptHeader(
     cwd?: string;
     /** Source transcript lineage recorded on forked transcript headers. */
     parentSession?: string;
+    /** Last event copied from the source transcript, which already counts its usage. */
+    inheritedThrough?: string;
     /** Stable timestamp shared with sibling records written in the same operation. */
     timestamp?: string;
   } = {},
@@ -22,6 +24,7 @@ export function createSessionTranscriptHeader(
     timestamp: params.timestamp ?? new Date().toISOString(),
     cwd: params.cwd ?? process.cwd(),
     ...(params.parentSession ? { parentSession: params.parentSession } : {}),
+    ...(params.inheritedThrough ? { inheritedThrough: params.inheritedThrough } : {}),
   };
 }
 
