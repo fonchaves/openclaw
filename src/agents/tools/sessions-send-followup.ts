@@ -188,6 +188,7 @@ export async function dispatchSessionsSendFollowup(
               requesterSessionKey: options.requesterSessionKey,
               requesterAgentId: options.requesterAgentId,
               requesterTurnRunId: registryTurn,
+              requesterRunInstance: instance,
               assertCurrent: assertCompletionCurrent,
             });
           }
@@ -221,6 +222,7 @@ export async function dispatchSessionsSendFollowup(
               assertCurrent: assertCompletionCurrent,
               assertPublicationCurrent: () => request?.custody.assertCurrent(),
               acceptedRunReplay: true,
+              requesterRunInstance: instance,
             },
           );
           accepted = {
