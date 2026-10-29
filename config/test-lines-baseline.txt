@@ -1,2 +1,2 @@
-# 6,243,924 (#186512) plus exactly #187069's 149 Goal regression-test lines.
-6244073
+# 6,243,924 (#186512) plus exactly #187069's 260 Goal regression-test lines.
+6244184
