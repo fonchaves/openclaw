@@ -241,6 +241,11 @@ try {
       const headers = run(["cat-file", "commit", listing]).split("\n\n", 1)[0].split("\n");
       const parents = headers.filter(line => line.startsWith("parent ")).map(line => line.slice(7));
       const entries = run(["ls-tree", listing]).split("\n");
+      const entryNames = ["binding.json", "review-snapshot"];
+      if (entries.length > entryNames.length || entries.some((entry, index) =>
+          !/^100644 blob [a-f0-9]+\t/.test(entry) || entry.split("\t")[1] !== entryNames[index])) {
+        throw new Error("Invalid workflow binding tree");
+      }
       if (Number(run(["cat-file", "-s", `${listing}:binding.json`])) > 4096) throw new Error("Oversized workflow binding");
       const record = JSON.parse(run(["show", `${listing}:binding.json`]));
       const keys = ["owner", "pr", "repository", "source", "version", ...(record.version === 2 ? ["continuation", "predecessor"] : [])].sort();
@@ -250,7 +255,7 @@ try {
         throw new Error("Workflow binding identity mismatch");
       }
       let expectedParents = [record.source];
-      let expectedEntries = ["binding.json"];
+      let expectedEntryCount = 1;
       if (record.version === 2) {
         const facts = record.continuation;
         if (!oid.test(record.predecessor) || !facts ||
@@ -269,10 +274,9 @@ try {
           throw new Error("Workflow successor review is not retained in its snapshot");
         }
         expectedParents = [...new Set([record.predecessor, record.source, facts.head, facts.hostedHead])];
-        expectedEntries.push("review-snapshot");
+        expectedEntryCount = 2;
       }
-      if (JSON.stringify(parents) !== JSON.stringify(expectedParents) || entries.length !== expectedEntries.length ||
-          entries.some((entry, index) => !new RegExp(`^100644 blob [a-f0-9]+\\t${expectedEntries[index]}$`).test(entry))) {
+      if (JSON.stringify(parents) !== JSON.stringify(expectedParents) || entries.length !== expectedEntryCount) {
         throw new Error("Invalid workflow binding tree");
       }
       return { oid: listing, source: record.source };

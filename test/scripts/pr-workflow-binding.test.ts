@@ -96,12 +96,22 @@ describe.skipIf(process.platform === "win32")("native workflow binding storage",
           snapshot,
         },
       };
-      if (fault === "review") record.continuation.review = source;
-      if (fault === "tree") record.continuation.tree = source;
-      if (fault === "snapshot") record.continuation.snapshot = review;
-      if (fault === "predecessor") record.predecessor = source;
+      if (fault === "review") {
+        record.continuation.review = source;
+      }
+      if (fault === "tree") {
+        record.continuation.tree = source;
+      }
+      if (fault === "snapshot") {
+        record.continuation.snapshot = review;
+      }
+      if (fault === "predecessor") {
+        record.predecessor = source;
+      }
       const parents = [previous, source, f.source];
-      if (fault === "parent order") parents.reverse();
+      if (fault === "parent order") {
+        parents.reverse();
+      }
       const next = f.write(record, parents, `100644 blob ${snapshot}\treview-snapshot\n`);
       const result = f.run("workflow-read");
       expect(result.status, result.stderr).toBe(fault === "valid" ? 0 : 1);
@@ -184,6 +194,7 @@ describe.skipIf(process.platform === "win32")("native workflow binding storage",
     "symbolic ref",
     "dangling symbolic ref",
     "blob ref",
+    "source commit",
     "oversized",
   ])("rejects a %s binding before selecting code", (fault) => {
     const f = fixture();
@@ -205,6 +216,16 @@ describe.skipIf(process.platform === "win32")("native workflow binding storage",
       expect(f.git(["symbolic-ref", ref])).toBe("refs/openclaw/missing-binding");
     } else if (fault === "blob ref") {
       f.git(["update-ref", ref, f.git(["hash-object", "-w", "--stdin"], "not a commit")]);
+    } else if (fault === "source commit") {
+      f.git(["update-ref", ref, f.source]);
+      for (const result of [
+        f.run("workflow-read"),
+        f.run("workflow-history", f.source, f.source),
+      ]) {
+        expect(result.status).toBe(1);
+        expect(result.stderr).toContain("Invalid workflow binding tree");
+      }
+      expect(f.git(["rev-parse", ref])).toBe(f.source);
     } else {
       f.write({ ...f.record, extra: "x".repeat(4096) });
     }

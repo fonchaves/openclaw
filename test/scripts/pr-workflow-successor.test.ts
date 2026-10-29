@@ -109,7 +109,7 @@ complete_prepare_push "$2" "$3" "$4" "$4" "$2"
 }
 
 function expectExit(result: ReturnType<typeof spawnSync>, status: number) {
-  expect(result.status, `${result.stdout}${result.stderr}`).toBe(status);
+  expect(result.status, `${String(result.stdout)}${String(result.stderr)}`).toBe(status);
 }
 
 function gitFault(f: ReturnType<typeof fixture>, phase: "before CAS" | "after CAS" | "race") {
@@ -166,7 +166,9 @@ describePosix("correction-only workflow succession", () => {
       );
       expect(archives).toHaveLength(1);
       for (const name of previousArchives) {
-        if (name.startsWith("prep-evidence.")) expect(existsSync(f.local(name))).toBe(true);
+        if (name.startsWith("prep-evidence.")) {
+          expect(existsSync(f.local(name))).toBe(true);
+        }
       }
       const [archive] = archives;
       expect(readFileSync(f.local(`${archive}/gates.env`)).equals(f.originalGate)).toBe(true);
@@ -210,8 +212,10 @@ describePosix("correction-only workflow succession", () => {
         hosted: "--expected-hosted-head",
       } as Record<string, string>
     )[fault];
-    if (key) Object.assign(overrides, { [key]: f.incoming });
-    if (fault === "mode")
+    if (key) {
+      Object.assign(overrides, { [key]: f.incoming });
+    }
+    if (fault === "mode") {
       f.writeLocal(
         "prep-context.env",
         f
@@ -219,9 +223,16 @@ describePosix("correction-only workflow succession", () => {
           .toString()
           .replace("PREP_REVIEW_MODE=correction", "PREP_REVIEW_MODE=ready"),
       );
-    if (fault === "capture") f.writeLocal("merge-output.log", "");
-    if (fault === "pending") f.writeLocal("gates.env", "PENDING_CRABBOX_RUN_ID=123\n");
-    if (fault === "lock") f.git(f.repo, "update-ref", lockRef, f.head);
+    }
+    if (fault === "capture") {
+      f.writeLocal("merge-output.log", "");
+    }
+    if (fault === "pending") {
+      f.writeLocal("gates.env", "PENDING_CRABBOX_RUN_ID=123\n");
+    }
+    if (fault === "lock") {
+      f.git(f.repo, "update-ref", lockRef, f.head);
+    }
     const gate = f.readLocal("gates.env");
     const result = f.run("prepare-workflow-successor", f.args(overrides));
     expect(result.status, result.stdout + result.stderr).not.toBe(0);
@@ -246,11 +257,14 @@ describePosix("correction-only workflow succession", () => {
           { mode: 0o700 },
         );
         extra = {};
-      } else extra = gitFault(f, phase);
+      } else {
+        extra = gitFault(f, phase);
+      }
       const result = f.transition(extra);
       expect(result.status, result.stdout + result.stderr).not.toBe(0);
-      if (phase !== "before invalidation")
+      if (phase !== "before invalidation") {
         expect(readFileSync(join(f.root, "fault-reached"), "utf8")).toBe(phase);
+      }
       f.unchanged();
       expect(existsSync(f.local("gates.env"))).toBe(phase === "before invalidation");
       const next = f.git(f.repo, "rev-parse", bindingRef);
@@ -259,7 +273,9 @@ describePosix("correction-only workflow succession", () => {
           predecessor: f.binding,
           source: f.current,
         });
-      } else expect(next).toBe(phase === "race" ? f.head : f.binding);
+      } else {
+        expect(next).toBe(phase === "race" ? f.head : f.binding);
+      }
       expect(
         readdirSync(join(f.worktree, ".local")).some((name) => name.startsWith("prep-evidence.")),
       ).toBe(true);
