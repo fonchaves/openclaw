@@ -14,9 +14,10 @@ const source = readFileSync(
   ),
   "utf8",
 );
-const transformCase = source
-  .split("case " + JSON.stringify("transform") + ":")[1]
-  .split("case " + JSON.stringify("cx") + ":")[0];
+const transformCase = source.match(/case "transform":([\s\S]*?)case "cx":/)?.[1];
+if (transformCase === undefined) {
+  throw new Error("Could not locate the production SVG transform validator");
+}
 const expression = transformCase.slice(
   transformCase.indexOf("return ") + 7,
   transformCase.indexOf(".test("),

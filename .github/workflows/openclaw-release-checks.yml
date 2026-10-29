@@ -158,7 +158,7 @@ env:
 
 jobs:
   resolve_target:
-    runs-on: ${{ vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), toJSON('ubuntu-24.04'))) || ('ubuntu-24.04') }}
+    runs-on: ${{ vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), '"ubuntu-24.04"')) || ('ubuntu-24.04') }}
     timeout-minutes: 30
     permissions:
       contents: read
@@ -856,6 +856,12 @@ jobs:
 
       - name: Summarize validated ref
         env:
+          QA_LIVE_MATRIX_ENABLED: ${{ steps.inputs.outputs.qa_live_matrix_enabled }}
+          QA_LIVE_BUZZ_ENABLED: ${{ steps.inputs.outputs.qa_live_buzz_enabled }}
+          QA_LIVE_TELEGRAM_ENABLED: ${{ steps.inputs.outputs.qa_live_telegram_enabled }}
+          QA_LIVE_DISCORD_ENABLED: ${{ steps.inputs.outputs.qa_live_discord_enabled }}
+          QA_LIVE_WHATSAPP_ENABLED: ${{ steps.inputs.outputs.qa_live_whatsapp_enabled }}
+          QA_LIVE_SLACK_ENABLED: ${{ steps.inputs.outputs.qa_live_slack_enabled }}
           RELEASE_REF: ${{ inputs.ref }}
           RELEASE_SHA: ${{ steps.ref.outputs.sha }}
           RELEASE_REF_FAST_PATH: ${{ steps.fast_ref.outputs.fast }}
@@ -914,7 +920,7 @@ jobs:
             if [[ -n "${RELEASE_CROSS_OS_SUITE_FILTER// }" ]]; then
               echo "- Cross-OS suite filter: \`${RELEASE_CROSS_OS_SUITE_FILTER}\`"
             fi
-            echo "- QA-live lane eligibility: Matrix \`${{ steps.inputs.outputs.qa_live_matrix_enabled }}\`, Buzz \`${{ steps.inputs.outputs.qa_live_buzz_enabled }}\`, Telegram \`${{ steps.inputs.outputs.qa_live_telegram_enabled }}\`, Discord \`${{ steps.inputs.outputs.qa_live_discord_enabled }}\`, WhatsApp \`${{ steps.inputs.outputs.qa_live_whatsapp_enabled }}\`, Slack \`${{ steps.inputs.outputs.qa_live_slack_enabled }}\`"
+            echo "- QA-live lane eligibility: Matrix \`${QA_LIVE_MATRIX_ENABLED}\`, Buzz \`${QA_LIVE_BUZZ_ENABLED}\`, Telegram \`${QA_LIVE_TELEGRAM_ENABLED}\`, Discord \`${QA_LIVE_DISCORD_ENABLED}\`, WhatsApp \`${QA_LIVE_WHATSAPP_ENABLED}\`, Slack \`${QA_LIVE_SLACK_ENABLED}\`"
             if [[ -n "$RELEASE_PACKAGE_SPEC" ]]; then
               echo "- Release package spec: \`${RELEASE_PACKAGE_SPEC}\`"
             fi
@@ -941,7 +947,7 @@ jobs:
     name: Prepare release package artifact
     needs: [resolve_target]
     if: needs.resolve_target.outputs.package_required == 'true'
-    runs-on: ${{ vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), toJSON('ubuntu-24.04'))) || ('ubuntu-24.04') }}
+    runs-on: ${{ vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), '"ubuntu-24.04"')) || ('ubuntu-24.04') }}
     timeout-minutes: 15
     permissions:
       actions: read
@@ -1018,6 +1024,7 @@ jobs:
         if: needs.resolve_target.outputs.package_mode != 'artifact'
         shell: bash
         env:
+          PACKAGE_ARTIFACT_NAME: ${{ steps.artifact.outputs.name }}
           CROSS_OS_SCHEDULED: ${{ needs.resolve_target.outputs.cross_os_scheduled }}
           CANDIDATE_PUBLISHED: ${{ needs.resolve_target.outputs.candidate_published }}
           DOCKER_REQUIRED: ${{ needs.resolve_target.outputs.docker_required }}
@@ -1087,7 +1094,7 @@ jobs:
           {
             echo "## Release package artifact"
             echo
-            echo "- Artifact: \`${{ steps.artifact.outputs.name }}\`"
+            echo "- Artifact: \`${PACKAGE_ARTIFACT_NAME}\`"
             echo "- Package: \`$package_label\`"
             echo "- SHA-256: \`$digest\`"
             echo "- Version: \`$version\`"
@@ -1434,7 +1441,7 @@ jobs:
     name: Resolve Windows-node release artifacts
     needs: [resolve_target]
     if: needs.resolve_target.outputs.windows_node_scheduled == 'true'
-    runs-on: ${{ vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), toJSON('ubuntu-24.04'))) || ('ubuntu-24.04') }}
+    runs-on: ${{ vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), '"ubuntu-24.04"')) || ('ubuntu-24.04') }}
     timeout-minutes: 5
     permissions:
       contents: read
@@ -1582,7 +1589,7 @@ jobs:
     name: Resolve Windows-node main source
     needs: [resolve_target]
     if: needs.resolve_target.outputs.windows_node_scheduled == 'true'
-    runs-on: ${{ vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), toJSON('ubuntu-24.04'))) || ('ubuntu-24.04') }}
+    runs-on: ${{ vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), '"ubuntu-24.04"')) || ('ubuntu-24.04') }}
     timeout-minutes: 5
     permissions:
       contents: read
@@ -1978,7 +1985,7 @@ jobs:
     name: Run QA Lab parity lane (${{ matrix.lane }})
     needs: [resolve_target]
     if: needs.resolve_target.outputs.qa_parity_scheduled == 'true'
-    runs-on: ${{ vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), toJSON('ubuntu-24.04'))) || ('ubuntu-24.04') }}
+    runs-on: ${{ vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), '"ubuntu-24.04"')) || ('ubuntu-24.04') }}
     timeout-minutes: 30
     permissions:
       contents: read
@@ -2151,7 +2158,7 @@ jobs:
     name: Run QA Lab parity report
     needs: [resolve_target, qa_lab_parity_lane_release_checks]
     if: needs.resolve_target.outputs.qa_parity_scheduled == 'true'
-    runs-on: ${{ vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), toJSON('ubuntu-24.04'))) || ('ubuntu-24.04') }}
+    runs-on: ${{ vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), '"ubuntu-24.04"')) || ('ubuntu-24.04') }}
     timeout-minutes: 20
     permissions:
       contents: read
@@ -2219,11 +2226,13 @@ jobs:
 
       - name: Verify parity lane statuses
         shell: bash
+        env:
+          SELECTION_FILE: ${{ steps.resolve_parity_lane_artifacts.outputs.selection_file }}
         run: |
           set -euo pipefail
           validated_file=".artifacts/release-check-selection/parity-lanes-validated.json"
           bash trusted-release-check-artifacts/scripts/github/resolve-release-check-artifacts.sh validate \
-            --selection-file "${{ steps.resolve_parity_lane_artifacts.outputs.selection_file }}" \
+            --selection-file "${SELECTION_FILE}" \
             --status-dir .artifacts/release-check-status \
             --validated-file "$validated_file"
           jq -e 'length == 2 and all(.[]; .status == "success")' "$validated_file" >/dev/null
@@ -2488,7 +2497,7 @@ jobs:
     name: Verify QA Lab runtime-pair lanes
     needs: [resolve_target, qa_lab_runtime_pair_lane_release_checks]
     if: always() && needs.resolve_target.result == 'success' && needs.resolve_target.outputs.qa_parity_scheduled == 'true'
-    runs-on: ${{ vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), toJSON('ubuntu-24.04'))) || ('ubuntu-24.04') }}
+    runs-on: ${{ vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), '"ubuntu-24.04"')) || ('ubuntu-24.04') }}
     timeout-minutes: 15
     permissions:
       actions: read
@@ -2555,12 +2564,13 @@ jobs:
         if: always()
         shell: bash
         env:
+          SELECTION_FILE: ${{ steps.resolve_runtime_pair_artifacts.outputs.selection_file }}
           RUN_RELEASE_SOAK: ${{ needs.resolve_target.outputs.run_release_soak }}
         run: |
           set -euo pipefail
           validated_file=".artifacts/release-check-selection/runtime-pair-lanes-validated.json"
           bash trusted-release-check-artifacts/scripts/github/resolve-release-check-artifacts.sh validate \
-            --selection-file "${{ steps.resolve_runtime_pair_artifacts.outputs.selection_file }}" \
+            --selection-file "${SELECTION_FILE}" \
             --status-dir .artifacts/release-check-status \
             --validated-file "$validated_file"
           expected_count=1
@@ -2604,7 +2614,7 @@ jobs:
     name: Enforce QA Lab runtime tool coverage
     needs: [resolve_target, qa_lab_runtime_parity_release_checks]
     if: needs.resolve_target.outputs.qa_parity_scheduled == 'true'
-    runs-on: ${{ vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), toJSON('ubuntu-24.04'))) || ('ubuntu-24.04') }}
+    runs-on: ${{ vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), '"ubuntu-24.04"')) || ('ubuntu-24.04') }}
     timeout-minutes: 15
     permissions:
       contents: read
@@ -2664,11 +2674,13 @@ jobs:
       - name: Verify runtime parity producer status
         id: verify_runtime_parity_status
         shell: bash
+        env:
+          SELECTION_FILE: ${{ steps.resolve_runtime_parity_artifacts.outputs.selection_file }}
         run: |
           set -euo pipefail
           validated_file=".artifacts/release-check-selection/runtime-parity-validated.json"
           bash trusted-release-check-artifacts/scripts/github/resolve-release-check-artifacts.sh validate \
-            --selection-file "${{ steps.resolve_runtime_parity_artifacts.outputs.selection_file }}" \
+            --selection-file "${SELECTION_FILE}" \
             --status-dir .artifacts/release-check-status \
             --validated-file "$validated_file"
           status="$(jq -r 'if length == 1 then .[0].status else empty end' "$validated_file")"
@@ -2758,7 +2770,7 @@ jobs:
     outputs:
       conclusion: ${{ steps.dispatch.outputs.conclusion || steps.dispatch.outcome }}
       identity_verified: ${{ steps.dispatch.outputs.identity_verified }}
-    runs-on: ${{ vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), toJSON('ubuntu-24.04'))) || ('ubuntu-24.04') }}
+    runs-on: ${{ vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), '"ubuntu-24.04"')) || ('ubuntu-24.04') }}
     timeout-minutes: 210
     permissions:
       actions: write
@@ -2896,7 +2908,7 @@ jobs:
     name: Run QA Lab live Discord lane
     needs: [resolve_target]
     if: needs.resolve_target.outputs.qa_live_scheduled == 'true' && needs.resolve_target.outputs.qa_live_discord_enabled == 'true'
-    runs-on: ${{ vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), toJSON('ubuntu-24.04'))) || ('ubuntu-24.04') }}
+    runs-on: ${{ vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), '"ubuntu-24.04"')) || ('ubuntu-24.04') }}
     timeout-minutes: 60
     permissions:
       contents: read
@@ -3001,7 +3013,7 @@ jobs:
     name: Run QA Lab live WhatsApp lane
     needs: [resolve_target]
     if: needs.resolve_target.outputs.qa_live_scheduled == 'true' && needs.resolve_target.outputs.qa_live_whatsapp_enabled == 'true'
-    runs-on: ${{ vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), toJSON('ubuntu-24.04'))) || ('ubuntu-24.04') }}
+    runs-on: ${{ vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), '"ubuntu-24.04"')) || ('ubuntu-24.04') }}
     timeout-minutes: 60
     concurrency:
       group: qa-live-whatsapp-shared
@@ -3090,7 +3102,7 @@ jobs:
     name: Run QA Lab live Slack lane
     needs: [resolve_target]
     if: needs.resolve_target.outputs.qa_live_scheduled == 'true' && needs.resolve_target.outputs.qa_live_slack_enabled == 'true'
-    runs-on: ${{ vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), toJSON('ubuntu-24.04'))) || ('ubuntu-24.04') }}
+    runs-on: ${{ vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), '"ubuntu-24.04"')) || ('ubuntu-24.04') }}
     timeout-minutes: 60
     permissions:
       contents: read
@@ -3199,7 +3211,7 @@ jobs:
       - qa_live_whatsapp_release_checks
       - qa_live_slack_release_checks
     if: always()
-    runs-on: ${{ vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), toJSON('ubuntu-24.04'))) || ('ubuntu-24.04') }}
+    runs-on: ${{ vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), '"ubuntu-24.04"')) || ('ubuntu-24.04') }}
     permissions:
       actions: read
       contents: read
@@ -3291,11 +3303,13 @@ jobs:
         if: steps.resolve_advisory_evidence.outcome == 'success'
         continue-on-error: true
         shell: bash
+        env:
+          SELECTION_FILE: ${{ steps.resolve_advisory_evidence.outputs.selection_file }}
         run: |
           set -euo pipefail
           mkdir -p .artifacts/release-check-status
           bash trusted-release-check-artifacts/scripts/github/resolve-release-check-artifacts.sh validate \
-            --selection-file "${{ steps.resolve_advisory_evidence.outputs.selection_file }}" \
+            --selection-file "${SELECTION_FILE}" \
             --status-dir .artifacts/release-check-status \
             --validated-file .artifacts/release-check-selection/advisory-evidence-validated.json
 

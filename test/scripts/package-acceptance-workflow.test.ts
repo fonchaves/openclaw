@@ -14717,13 +14717,11 @@ describe("package artifact reuse", () => {
         RELEASE_CHECKS_WORKFLOW,
         "runtime_tool_coverage_release_checks",
       );
-      const script = workflowStep(
-        runtimeCoverage,
-        "Verify runtime parity producer status",
-      ).run?.replace(
+      const step = workflowStep(runtimeCoverage, "Verify runtime parity producer status");
+      expect(step.env?.SELECTION_FILE).toBe(
         "${{ steps.resolve_runtime_parity_artifacts.outputs.selection_file }}",
-        selectionFile,
       );
+      const script = step.run;
       expect(script).toBeTruthy();
       const result = spawnSync("bash", ["--noprofile", "--norc", "-c", script!], {
         cwd: workdir,
@@ -14731,6 +14729,7 @@ describe("package artifact reuse", () => {
         env: {
           GITHUB_OUTPUT: outputFile,
           PATH: process.env.PATH,
+          SELECTION_FILE: selectionFile,
         },
       });
 
