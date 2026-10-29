@@ -10,7 +10,7 @@ const imap = createRequire(root.resolve("./extensions/imap/package.json"));
 const mailparser = imap("mailparser");
 const mailparserRequire = createRequire(imap.resolve("mailparser"));
 const addressparser = mailparserRequire("nodemailer/lib/addressparser");
-test("mailparser preserves nested-comment sender identity", async () => {
+await test("mailparser preserves nested-comment sender identity", async () => {
   const nested = "Victim (x(y) <evil@evil.com>) <v@victim.com>";
   assert.deepEqual(addressparser(nested), [{ address: "v@victim.com", name: "Victim" }]);
   const mail = await mailparser.simpleParser(
@@ -26,7 +26,7 @@ test("mailparser preserves nested-comment sender identity", async () => {
   assert.equal(mail.to.value[0].address, "user@example.com");
 });
 // Boundary cases from upstream Nodemailer fix 1cd57d2 (Andris Reinman).
-test("mailparser keeps quoted angle and group delimiters inside addresses", () => {
+await test("mailparser keeps quoted angle and group delimiters inside addresses", () => {
   assert.deepEqual(addressparser('<"a@evil.com>"@good.com>'), [
     { address: '"a@evil.com>"@good.com', name: "" },
   ]);
@@ -36,7 +36,7 @@ test("mailparser keeps quoted angle and group delimiters inside addresses", () =
 });
 
 const metadataUrl = pathToFileURL(matrix.resolve("music-metadata")).href;
-test("metadata rejects zero-length MP4 entries without unbounded work", () => {
+await test("metadata rejects zero-length MP4 entries without unbounded work", () => {
   const child =
     "const {parseBuffer}=await import(" +
     JSON.stringify(metadataUrl) +
@@ -56,7 +56,7 @@ test("metadata rejects zero-length MP4 entries without unbounded work", () => {
   assert.equal(result.status, 0, result.stderr);
 });
 
-test("metadata rejects oversized EBML before allocation", async () => {
+await test("metadata rejects oversized EBML before allocation", async () => {
   const { parseBuffer } = await import(metadataUrl);
   await assert.rejects(
     parseBuffer(
