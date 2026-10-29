@@ -1,6 +1,6 @@
 // Tool schema runtime tests cover provider plugin schema normalization and
 // compact diagnostics for invalid provider-facing tool schemas.
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   // Hoisted mocks let the module under test import logger/provider runtime once
@@ -26,6 +26,10 @@ const { logProviderToolSchemaDiagnostics, normalizeProviderToolSchemas } =
   await import("./tool-schema-runtime.js");
 
 describe("tool schema runtime diagnostics", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it("stays quiet when a provider reports no diagnostics", () => {
     mocks.inspectProviderToolSchemasWithPlugin.mockReturnValueOnce([]);
 
@@ -87,5 +91,32 @@ describe("tool schema runtime diagnostics", () => {
         ],
       },
     );
+  });
+
+  it("inspects normalized tools and remains quiet when normalizer cleans schema violations", () => {
+    const rawTools = [{ name: "exec", parameters: { type: "object", maxLength: 120 } }] as never;
+    const cleanedTools = [{ name: "exec", parameters: { type: "object" } }] as never;
+
+    mocks.normalizeProviderToolSchemasWithPlugin.mockReturnValueOnce(cleanedTools);
+    mocks.inspectProviderToolSchemasWithPlugin.mockReturnValueOnce([]);
+
+    logProviderToolSchemaDiagnostics({
+      provider: "google",
+      tools: rawTools,
+    });
+
+    expect(mocks.normalizeProviderToolSchemasWithPlugin).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "google",
+        context: expect.objectContaining({ tools: rawTools }),
+      }),
+    );
+    expect(mocks.inspectProviderToolSchemasWithPlugin).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "google",
+        context: expect.objectContaining({ tools: cleanedTools }),
+      }),
+    );
+    expect(mocks.log.warn).not.toHaveBeenCalled();
   });
 });
