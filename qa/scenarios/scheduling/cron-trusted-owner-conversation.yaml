@@ -26,6 +26,7 @@ scenario:
     - Another conversation cannot pause the owner's trusted job.
     - A prompt and tool edit from the owner conversation drops the job to account authority bound to that conversation.
     - A legacy owner record without an account cannot change what a trusted job runs or where its failures alert.
+    - An owner conversion to a system event keeps the account ceiling after an operator restores an agent turn.
   docsRefs:
     - docs/automation/cron-jobs.md
   codeRefs:
@@ -52,6 +53,7 @@ scenario:
       narrowMarker: QA-CRON-TRUSTED-OWNER-NARROWED
       legacyNarrowMarker: QA-CRON-TRUSTED-OWNER-LEGACY-REFUSED
       realertMarker: QA-CRON-TRUSTED-OWNER-REALERT-REFUSED
+      dormantMarker: QA-CRON-TRUSTED-OWNER-DORMANT
 
 flow:
   steps:
@@ -167,3 +169,26 @@ flow:
             message:
               expr: "`a legacy owner record moved a trusted job's failure alerts: ${JSON.stringify({ failureAlert: realertAfter.failureAlert, policy: realertAfter.scheduledToolPolicy, tool: await lastToolOutput() })}`"
       detailsExpr: "`realert failureAlert=${JSON.stringify(realertAfter.failureAlert ?? null)} policy=${realertAfter.scheduledToolPolicy?.mode}`"
+
+    - name: an owner conversion to a system event keeps the account ceiling through operator restoration
+      actions:
+        - set: dormantJob
+          value:
+            expr: "await addTrustedJob({ agentId: 'qa', sessionKey: ownerSessionKey, accountId: 'default' })"
+        - set: dormantReply
+          value:
+            expr: "await ask(config.conversationId, `Trusted automation owner QA check: action=dormant target=${dormantJob.id} marker=${config.dormantMarker}`, config.dormantMarker)"
+        - set: dormantAfter
+          value:
+            expr: "await env.gateway.call('cron.get', { id: dormantJob.id }, { timeoutMs: 30000 })"
+        - set: restored
+          value:
+            expr: "await env.gateway.call('cron.update', { id: dormantJob.id, patch: { sessionTarget: 'isolated', payload: { kind: 'agentTurn', message: 'Restored by the operator.', toolsAllow: ['read'] } } }, { timeoutMs: 30000 })"
+        - set: restoredJob
+          value:
+            expr: "await env.gateway.call('cron.get', { id: dormantJob.id }, { timeoutMs: 30000 })"
+        - assert:
+            expr: "dormantAfter.payload?.kind === 'systemEvent' && dormantAfter.scheduledToolPolicy?.mode === 'account' && restoredJob.payload?.kind === 'agentTurn' && restoredJob.scheduledToolPolicy?.mode === 'account' && restoredJob.scheduledToolPolicy.ownerSessionKey === ownerSessionKey"
+            message:
+              expr: "`a dormant owner conversion lost its account ceiling: ${JSON.stringify({ dormant: dormantAfter.scheduledToolPolicy, restored: restoredJob.scheduledToolPolicy, tool: await lastToolOutput() })}`"
+      detailsExpr: "`dormant policy=${dormantAfter.scheduledToolPolicy?.mode} restored policy=${restoredJob.scheduledToolPolicy?.mode}`"

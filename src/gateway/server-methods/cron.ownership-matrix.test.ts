@@ -188,6 +188,11 @@ async function updateAs(
   }
 }
 
+function expectDefinedJob(job: CronJob | undefined): CronJob {
+  expect(job).toBeDefined();
+  return job!;
+}
+
 describe("cron ownership access matrix", () => {
   beforeEach(() => {
     getRuntimeConfig.mockReset().mockReturnValue(OWNER_CONFIG);
@@ -443,5 +448,36 @@ describe("cron ownership access matrix", () => {
     const narrowed = await updateAs("scoped", { id: owned.id, patch: { delivery } }, owned.context);
     expect(narrowed.respond.mock.calls[0]?.[0]).toBe(true);
     expect((await owned.stored())?.scheduledToolPolicy).toEqual(policy(S_A, "default"));
+
+    // A dormant conversion keeps the account ceiling across reload and operator restoration.
+    const dormant = await seedService({
+      owner: { ...ownerNoAccount, accountId: "default" },
+      scheduledToolPolicy: trusted,
+      payload,
+    });
+    const toEvent = await updateAs(
+      "scoped",
+      {
+        id: dormant.id,
+        patch: { sessionTarget: "main", payload: { kind: "systemEvent", text: "Check status" } },
+      },
+      dormant.context,
+    );
+    expect(toEvent.respond.mock.calls[0]?.[0]).toBe(true);
+    expect((await dormant.stored())?.scheduledToolPolicy).toEqual(policy(S_A, "default"));
+    const reloaded = await seedService(expectDefinedJob(await dormant.stored()));
+    const restore = await invokeCron(
+      "cron.update",
+      {
+        id: reloaded.id,
+        patch: {
+          sessionTarget: "isolated",
+          payload: { kind: "agentTurn", message: "restored", toolsAllow: ["read"] },
+        },
+      },
+      { context: reloaded.context },
+    );
+    expect(restore.respond.mock.calls[0]?.[0]).toBe(true);
+    expect((await reloaded.stored())?.scheduledToolPolicy).toEqual(policy(S_A, "default"));
   });
 });

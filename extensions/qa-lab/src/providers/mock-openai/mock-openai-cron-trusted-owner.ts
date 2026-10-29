@@ -2,11 +2,12 @@ import type { ResponsesInputItem, StreamEvent } from "./mock-openai-contracts.js
 import { buildAssistantEvents } from "./mock-openai-events.js";
 
 const QA_CRON_TRUSTED_OWNER_PROMPT_RE =
-  /Trusted automation owner QA check: action=(pause|narrow|realert) target=(\S+) marker=(\S+)/;
+  /Trusted automation owner QA check: action=(pause|narrow|realert|dormant) target=(\S+) marker=(\S+)/;
 
 /**
  * Scripts a chat turn that pauses an operator-created automation rewrites its prompt and
- * tools, or moves its failure alerts, then ends with the marker. The scenario asserts the stored job.
+ * tools, moves its failure alerts, or turns it into a
+ * system event, then ends with the marker. The scenario asserts the stored job.
  */
 export function planCronTrustedOwnerTurn(params: {
   prompt: string;
@@ -29,13 +30,15 @@ export function planCronTrustedOwnerTurn(params: {
           ? { enabled: false }
           : action === "realert"
             ? { failureAlert: { after: 1, mode: "webhook", to: "https://alerts.example/cron" } }
-            : {
-                payload: {
-                  kind: "agentTurn",
-                  message: "Narrowed by the owner conversation.",
-                  toolsAllow: [],
+            : action === "dormant"
+              ? { sessionTarget: "main", payload: { kind: "systemEvent", text: "Check status" } }
+              : {
+                  payload: {
+                    kind: "agentTurn",
+                    message: "Narrowed by the owner conversation.",
+                    toolsAllow: [],
+                  },
                 },
-              },
     });
   }
   return buildAssistantEvents(marker ?? "");
