@@ -70,6 +70,7 @@ describe("update completion ownership", () => {
   it.each([false, true])(
     "retires the settled model warning (other advisory=%s)",
     async (otherAdvisory) => {
+      vi.stubEnv("OPENCLAW_DISABLE_BUNDLED_PLUGINS", "1");
       const deferred = "Model retirement deferred until configured plugin installation converges.";
       const unrelated = "An unrelated Doctor advisory remains.";
       await writeScenario("repair", {
