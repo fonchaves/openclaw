@@ -166,13 +166,14 @@ export async function createOpenClawToolsWithPreparation(
 
 /** @deprecated Use createOpenClawToolsAsync for runtime construction. */
 export function createOpenClawTools(
-  options?: OpenClawToolsOptions,
+  inputOptions?: OpenClawToolsOptions,
   preparedDelegateTools?: AnyAgentTool[],
   preparedWebSearchConfigured?: boolean,
 ): AnyAgentTool[] {
-  const resolvedConfig = options?.config;
-  const sessionConfig = options?.sessionConfigSource === "runtime" ? undefined : resolvedConfig;
-  const activeProjectKeys = options?.preparedModelRuntime?.activeProjectKeys ?? [];
+  const resolvedConfig = inputOptions?.config;
+  const sessionConfig =
+    inputOptions?.sessionConfigSource === "runtime" ? undefined : resolvedConfig;
+  const activeProjectKeys = inputOptions?.preparedModelRuntime?.activeProjectKeys ?? [];
   const runtimeSnapshot = getActiveSecretsRuntimeConfigSnapshot();
   const availabilityConfig = selectApplicableRuntimeConfig({
     inputConfig: resolvedConfig,
@@ -180,13 +181,13 @@ export function createOpenClawTools(
     runtimeSourceConfig: runtimeSnapshot?.sourceConfig,
   });
   const { sessionAgentId } = resolveSessionAgentIds({
-    sessionKey: options?.runSessionKey ?? options?.agentSessionKey,
+    sessionKey: inputOptions?.runSessionKey ?? inputOptions?.agentSessionKey,
     config: resolvedConfig,
-    agentId: options?.requesterAgentIdOverride,
+    agentId: inputOptions?.requesterAgentIdOverride,
   });
-  options = {
-    ...options,
-    fsPolicy: resolveCapturedOpenClawToolsFsPolicy(options ?? {}, sessionAgentId),
+  const options = {
+    ...inputOptions,
+    fsPolicy: resolveCapturedOpenClawToolsFsPolicy(inputOptions ?? {}, sessionAgentId),
   };
   const swarmToolGroups = createOpenClawSwarmToolGroups({
     ...options,
