@@ -124,3 +124,41 @@ The plugin package owner bundles patched runtime dependencies so installed
 WhatsApp plugins retain the adapter. Remove this patch and its registration
 when an upstream Baileys version accepts the current decoder and passes the
 same voice-note regression.
+
+
+## Zod 3.25.76 early collection bounds
+
+zod@3.25.76.patch is a local Zod-3 adaptation of the early upper-size rejection
+behavior in Colin McDonnell's upstream Zod commit
+a0ebf970f2d752e5f58527cd2942ff48be4f46bd (colinhacks/zod#6652).
+It is not an upstream Zod-3 release, a cherry-pick, or an A2UI/Zod-4 migration.
+The implementation changes three branches in each of src/v3/types.ts,
+v3/types.js, and v3/types.cjs: oversized array max/exact length and set max
+return the existing aborted result before visiting elements. Set exact size
+already delegates to max/min. No declaration, export, A2UI source, license or
+Zod-4 implementation is replaced.
+
+This mitigates collection traversal only where an upper bound is declared.
+A2UI 0.12's catalog JSON-schema loader translates maxItems into such a bound;
+0.11's loader does not, so its integration regression instead exercises a
+custom bounded function schema through the public Catalog invoker. This does
+not add protocol-wide message limits or protect unbounded arrays.
+
+An oversized collection now aborts instead of returning dirty: element and
+outer refinements do not run, and a failing union may report invalid_union
+instead of the dirty branch's too_big. Valid transforms, preprocessing,
+lower-bound failures and wrong-type rejection are covered by regressions.
+The exact-version patch also affects other consumers resolving Zod 3.25.76,
+including zod-to-json-schema; the separate parser embedded in Discord's SDK
+and the package's v4 subpath are not changed. No global advisory clearance is
+claimed. Keep source attribution and original copyright notices intact.
+
+Run node --test test/scripts/a2ui-zod-bounds.regression.mjs and the native
+node scripts/run-vitest.mjs run test/scripts/a2ui-zod-bounds.test.ts.
+
+The package-patch guard is deliberately unchanged. This new patch still needs
+explicit authorization in its exact-package allowlist before landing; the
+current guard rejects it. No check is disabled or reclassified. Keep the PR
+draft pending that decision, independent full-context review and hosted checks.
+
+Patch SHA-256: 2f14d2000a3645bf519c1a1cc4848a71d55185327a9a976a4f033e7d507b727d
