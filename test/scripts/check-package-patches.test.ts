@@ -34,6 +34,8 @@ afterEach(() => {
 describe("check-package-patches", () => {
   it("allows approved pnpm patches together", () => {
     const approvedPatches = [
+      ["@a2ui/web_core@0.11.0", "patches/@a2ui__web_core@0.11.0.patch"],
+      ["@discord/embedded-app-sdk@2.5.0", "patches/@discord__embedded-app-sdk@2.5.0.patch"],
       ["@awesome.me/webawesome@3.13.0", "patches/@awesome.me__webawesome@3.13.0.patch"],
       ["baileys@7.0.0-rc12", "patches/baileys@7.0.0-rc12.patch"],
       ["baileys@7.0.0-rc13", "patches/baileys@7.0.0-rc13.patch"],

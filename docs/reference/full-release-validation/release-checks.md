@@ -35,6 +35,55 @@ artifact when package or Docker-facing stages need it.
 | QA live Slack            | **Job:** `Run QA Lab live Slack lane`<br />**Backing workflow:** direct job with recorded status enforced by the release verifier<br />**Tests:** live Slack QA with Convex CI credential leases when `OPENCLAW_RELEASE_QA_SLACK_LIVE_CI_ENABLED` is enabled.<br />**Rerun:** `rerun_group=qa-live` with `live_suite_filter=qa-live-slack`.                                                                                                                                                                                                                                                                 |
 | Release verifier         | **Job:** `Verify release checks`<br />**Backing workflow:** none<br />**Tests:** required release-check jobs for the selected rerun group.<br />**Rerun:** rerun after focused child jobs pass.                                                                                                                                                                                                                                                                                                                                                                                                             |
 
+## Windows-node candidate lanes
+
+Windows-node checks run only in the candidate phase, after package preparation,
+not in the independent phase. The shared release planner selects them for `all`
+and `windows-node`. The newest stable node must pass setup, connection, and a
+Gateway-mediated invocation for every selected Gateway candidate, including
+betas. Stable failures, protocol mismatches, and skips block release. Alpha and
+main still run, but failures or unavailable coverage are advisory.
+
+The release resolver selects the latest published canonical stable (`vX.Y.Z`
+or correction `vX.Y.Z-N`) and production alpha (`vX.Y.Z-alpha.N`), requires a
+hashed x64 Tray ZIP (or MSIX when no ZIP exists), and records the tag, source
+commit, asset name, and digest. Missing, unresolvable, artifact-less, or superseded
+alpha coverage is reported without blocking stable validation. The
+main lane resolves `main` once to a commit and never substitutes for release
+artifact coverage. The callee verifies downloaded bytes against these digests.
+
+The immutable reusable workflow revision is separate from the app source
+revision and also pins the maintained setup/test harness. Release lanes use the
+published app bytes; main builds its separately checked-out source commit. The
+harness installs the exact candidate (including beta versions), connects the app,
+and invokes `system.which` through the real Gateway. It does not require old
+apps to advertise the current harness's full capability inventory.
+
+The harness installs one local tarball inside WSL and resolves every other
+dependency from npm. Release-shaped candidates keep core dependencies such as
+`@openclaw/ai` unbundled because they publish together with core, so package
+preparation hands Windows-node a self-contained copy: it bundles each unbundled
+core dependency at the exact candidate version from the verified prerelease
+plugin registry, and passes the candidate through unchanged when there is no
+registry or nothing to bundle. Other lanes keep installing the unmodified
+release package.
+
+Evidence names distinguish the app source kind and release tag or source SHA.
+No lane accepts a protocol mismatch as a passing test. Preview failures retain
+their raw GitHub job conclusions; Release Checks can therefore appear red while
+Full Release Validation passes with explicit advisory evidence. The release
+policy admits only the named preview jobs and main-source resolver, and only
+when stable E2E succeeds and the release-check verifier passes the existing
+trusted-tooling policy. Independently approved provider waivers retain their
+aggregate-log checks. Unrelated unwaived failures and whole-workflow cancellation
+still block. Automatic child reuse remains limited
+to green runs; advisory-red children run again rather than reusing red evidence.
+
+The harness OIDC check binds the called workflow, not the caller's authority.
+The workflow receives caller-scoped read permissions, no inherited secrets,
+and runs on GitHub-hosted Windows; it does not publish releases. This is
+setup/connect coverage, not MXC/AppContainer containment proof.
+
 ## Docker release-path chunks
 
 The Docker release-path stage runs these chunks when `live_suite_filter` is

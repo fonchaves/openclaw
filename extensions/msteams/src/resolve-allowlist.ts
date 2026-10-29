@@ -36,6 +36,31 @@ type StableMSTeamsTeamIdMode = "bot-framework" | "graph";
 
 const MSTEAMS_GROUP_CONVERSATION_ID = /^19:.+@thread\.(?:tacv2|skype|v2)$/i;
 
+// Keep unresolved restrictions active; never use a configurable access-group reference.
+const MSTEAMS_UNMATCHABLE_THREAD_ID = "19:openclaw-unresolved-allowlist@thread.unresolved";
+
+/** Synthetic restrictions keep maps configured but must never become name/ID grants. */
+export function withoutUnresolvedMSTeamsAllowlistEntries<T>(
+  entries: Record<string, T>,
+): Record<string, T> {
+  if (!Object.hasOwn(entries, MSTEAMS_UNMATCHABLE_THREAD_ID)) {
+    return entries;
+  }
+  return Object.fromEntries(
+    Object.entries(entries).filter(([key]) => key !== MSTEAMS_UNMATCHABLE_THREAD_ID),
+  );
+}
+
+export function keepConfiguredMSTeamsAllowlistActive(
+  configured: readonly string[] | undefined,
+  projected: string[] | undefined,
+): string[] | undefined {
+  if (!Array.isArray(configured) || configured.every((entry) => !entry?.trim())) {
+    return projected;
+  }
+  return projected && projected.length > 0 ? projected : [MSTEAMS_UNMATCHABLE_THREAD_ID];
+}
+
 function normalizeExactMatch(value?: string | null): string {
   return normalizeLowercaseStringOrEmpty(value ?? "");
 }
@@ -241,6 +266,7 @@ function isStableMSTeamsTeamKey(raw: string): boolean {
 
 function projectStableMSTeamsChannels(
   channels: NonNullable<MSTeamsConfig["teams"]>[string]["channels"],
+  options: { keepConfigured?: boolean } = {},
 ) {
   const projected: NonNullable<typeof channels> = {};
   for (const [channelKey, channelConfig] of Object.entries(channels ?? {})) {
@@ -252,15 +278,39 @@ function projectStableMSTeamsChannels(
       projected[normalizeMSTeamsConversationTargetId(channelKey)] = channelConfig;
     }
   }
+  if (
+    options.keepConfigured &&
+    Object.keys(channels ?? {}).length > 0 &&
+    Object.keys(projected).length === 0
+  ) {
+    // Every configured channel was a mutable name; an empty map would admit every channel.
+    projected[MSTEAMS_UNMATCHABLE_THREAD_ID] = {};
+  }
   return projected;
 }
 
-export function projectStableMSTeamsTeamsConfig(
-  teams: MSTeamsConfig["teams"],
-): NonNullable<MSTeamsConfig["teams"]> | undefined {
-  if (!teams) {
-    return undefined;
+/** Drops the unmatchable placeholders once a real entry exists beside them. */
+function dropRedundantUnmatchablePlaceholders(
+  teams: NonNullable<MSTeamsConfig["teams"]>,
+): NonNullable<MSTeamsConfig["teams"]> {
+  const realTeamKeys = Object.keys(teams).filter((key) => key !== MSTEAMS_UNMATCHABLE_THREAD_ID);
+  const cleaned: NonNullable<MSTeamsConfig["teams"]> = {};
+  for (const [teamKey, teamConfig] of Object.entries(teams)) {
+    if (teamKey === MSTEAMS_UNMATCHABLE_THREAD_ID && realTeamKeys.length > 0) {
+      continue;
+    }
+    const channels = { ...teamConfig.channels };
+    if (Object.keys(channels).length > 1) {
+      delete channels[MSTEAMS_UNMATCHABLE_THREAD_ID];
+    }
+    cleaned[teamKey] = { ...teamConfig, channels };
   }
+  return cleaned;
+}
+
+function projectStableMSTeamsTeams(
+  teams: NonNullable<MSTeamsConfig["teams"]>,
+): NonNullable<MSTeamsConfig["teams"]> {
   const projected: NonNullable<MSTeamsConfig["teams"]> = {};
   for (const [teamKey, teamConfig] of Object.entries(teams)) {
     if (teamKey !== "*" && !isStableMSTeamsTeamKey(teamKey)) {
@@ -269,10 +319,30 @@ export function projectStableMSTeamsTeamsConfig(
     const stableKey = teamKey === "*" ? teamKey : normalizeMSTeamsConversationTargetId(teamKey);
     projected[stableKey] = {
       ...teamConfig,
-      channels: projectStableMSTeamsChannels(teamConfig.channels),
+      channels: projectStableMSTeamsChannels(teamConfig.channels, { keepConfigured: true }),
     };
   }
   return projected;
+}
+
+/** Keeps a configured but fully unresolvable teams allowlist configured and matching nothing. */
+function keepConfiguredMSTeamsTeamsActive(
+  configured: NonNullable<MSTeamsConfig["teams"]>,
+  teams: NonNullable<MSTeamsConfig["teams"]>,
+): NonNullable<MSTeamsConfig["teams"]> {
+  if (Object.keys(configured).length === 0 || Object.keys(teams).length > 0) {
+    return teams;
+  }
+  return { [MSTEAMS_UNMATCHABLE_THREAD_ID]: {} };
+}
+
+export function projectStableMSTeamsTeamsConfig(
+  teams: MSTeamsConfig["teams"],
+): NonNullable<MSTeamsConfig["teams"]> | undefined {
+  if (!teams) {
+    return undefined;
+  }
+  return keepConfiguredMSTeamsTeamsActive(teams, projectStableMSTeamsTeams(teams));
 }
 
 export function parseMSTeamsTeamChannelInput(raw: string): { team?: string; channel?: string } {
@@ -483,7 +553,7 @@ export async function resolveMSTeamsTeamsConfig(params: {
     teamIdMode: params.teamIdMode,
   });
   const mapping: string[] = [];
-  const teams = projectStableMSTeamsTeamsConfig(params.teams) ?? {};
+  const teams = projectStableMSTeamsTeams(params.teams);
 
   resolved.forEach((entry, index) => {
     const source = entries[index];
@@ -526,7 +596,14 @@ export async function resolveMSTeamsTeamsConfig(params: {
     }
   });
 
-  return { teams, mapping, unresolved };
+  return {
+    teams: keepConfiguredMSTeamsTeamsActive(
+      params.teams,
+      dropRedundantUnmatchablePlaceholders(teams),
+    ),
+    mapping,
+    unresolved,
+  };
 }
 
 export async function resolveMSTeamsUserAllowlist(params: {

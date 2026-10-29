@@ -3,7 +3,7 @@
 import { nothing, render } from "lit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WebPushNotificationPreferences } from "../../../packages/gateway-protocol/src/schema/push.ts";
-import { createDeferred } from "../../../test/helpers/promise.js";
+import { createDeferred, withinTest } from "../../../test/helpers/promise.js";
 import type { GatewayBrowserClient } from "../api/gateway.ts";
 import { renderNotificationsSection } from "../pages/config/notifications-section.ts";
 import { createConnectionBootstrapCoordinator } from "./connection-bootstrap.ts";
@@ -115,6 +115,21 @@ function preferenceResult(user: WebPushNotificationPreferences) {
     device: { enabled: true, label: "" },
     effective: { ...user, enabled: true, label: "" },
   };
+}
+
+/** Wait for the actual publication; lazy module loading has no one-second contract. */
+function nextPreferencesPublication(
+  capability: ReturnType<typeof createWebPushCapability>,
+  signal: AbortSignal,
+): Promise<WebPushNotificationPreferences> {
+  const published = createDeferred<WebPushNotificationPreferences>();
+  const stop = capability.subscribe(() => {
+    const preferences = capability.snapshot.preferences;
+    if (preferences && !capability.snapshot.loading) {
+      published.resolve(preferences.user);
+    }
+  });
+  return withinTest(published.promise, signal).finally(stop);
 }
 
 function gatewayClient(vapidPublicKey: Promise<string>) {
@@ -238,8 +253,11 @@ describe("web push Gateway reconciliation", () => {
     coordinator.reset();
   });
 
-  it("serializes rapid preference edits without dropping the latest full object", async () => {
+  it("serializes rapid preference edits without dropping the latest full object", async ({
+    signal,
+  }) => {
     const firstSave = createDeferred();
+    const firstSaveStarted = createDeferred();
     const first = notificationPreferences(true);
     const second = notificationPreferences(false);
     let stored = first;
@@ -257,6 +275,7 @@ describe("web push Gateway reconciliation", () => {
       if (method === "push.web.preferences.set") {
         saveCount += 1;
         if (saveCount === 1) {
+          firstSaveStarted.resolve();
           await firstSave.promise;
         }
         stored = (params as { preferences: WebPushNotificationPreferences }).preferences;
@@ -266,17 +285,13 @@ describe("web push Gateway reconciliation", () => {
     });
     const harness = gatewayHarness();
     const capability = createWebPushCapability(harness.gateway);
+    const initialPublication = nextPreferencesPublication(capability, signal);
     harness.connect({ request } as unknown as GatewayBrowserClient);
-    await vi.waitFor(() => expect(capability.snapshot.preferences).toBeTruthy());
+    expect(await initialPublication).toEqual(first);
     request.mockClear();
 
     const firstOperation = capability.run({ kind: "set", scope: "user", preferences: first });
-    await vi.waitFor(() =>
-      expect(request).toHaveBeenCalledWith(
-        "push.web.preferences.set",
-        expect.objectContaining({ preferences: first }),
-      ),
-    );
+    await withinTest(firstSaveStarted.promise, signal);
     const secondOperation = capability.run({ kind: "set", scope: "user", preferences: second });
     firstSave.resolve();
 

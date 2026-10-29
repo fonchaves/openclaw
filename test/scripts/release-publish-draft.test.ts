@@ -63,6 +63,7 @@ function publicationFixture({
     "scripts/lib/tsx-cli-shim.mjs",
     "scripts/lib/local-check-runtime.mts",
     "scripts/openclaw-npm-extended-stable-release.mjs",
+    "scripts/plugin-sdk-api-release-evidence.mjs",
     "scripts/lib/release-changelog.mjs",
     "scripts/lib/release-notes-compaction.mjs",
     "scripts/lib/release-version.mjs",

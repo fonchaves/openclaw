@@ -39,6 +39,7 @@ const source = readFileSync(".github/workflows/plugin-clawhub-new.yml", "utf8");
 const workflow = parse(source) as Workflow;
 const jobs = workflow.jobs ?? {};
 const materializerSource = readFileSync("scripts/materialize-clawhub-cli.sh", "utf8");
+const sharedMaterializerSource = readFileSync("scripts/lib/materialize-pinned-cli.sh", "utf8");
 const clawhubCliPackage = JSON.parse(
   readFileSync(".github/release/clawhub-cli/package.json", "utf8"),
 ) as { dependencies?: Record<string, string> };
@@ -398,16 +399,17 @@ describe("Plugin ClawHub New workflow", () => {
         "sha512-VwM6FQrZVarFRDiEqG42npUeyCu/iLhPnpO+b7kKIGRXv+TA6Lb8pboHnIgT6cmjFEnW3j/pTbshWeDQMQ7QWQ==",
       version: "0.23.3",
     });
-    expect(materializerSource).toContain("npm ci");
-    expect(materializerSource).toContain('cd "${destination}"');
-    expect(materializerSource).not.toContain('--prefix "${destination}"');
-    expect(materializerSource).toContain("--ignore-scripts");
-    expect(materializerSource).toContain("--omit=dev");
+    expect(materializerSource).toContain("/lib/materialize-pinned-cli.sh");
+    expect(sharedMaterializerSource).toContain("npm ci");
+    expect(sharedMaterializerSource).toContain('cd "${destination}"');
+    expect(sharedMaterializerSource).not.toContain('--prefix "${destination}"');
+    expect(sharedMaterializerSource).toContain("--ignore-scripts");
+    expect(sharedMaterializerSource).toContain("--omit=dev");
     const lockSha256 = createHash("sha256").update(clawhubCliLockBytes).digest("hex");
     expect(materializerSource).toContain(`expected_lock_sha256="${lockSha256}"`);
-    expect(materializerSource).toContain("lock_sha256=");
-    expect(materializerSource).toContain("integrity=${clawhub_integrity}");
-    expect(materializerSource).toContain("cli=${clawhub_cli}");
+    expect(sharedMaterializerSource).toContain("lock_sha256=");
+    expect(sharedMaterializerSource).toContain("integrity=${cli_integrity}");
+    expect(sharedMaterializerSource).toContain("cli=${cli}");
     expect(source).not.toContain("npm exec");
     expect(source).not.toMatch(/\bnpm\s+install\b/u);
     expect(source).not.toContain("CLAWHUB_CLI_PACKAGE");

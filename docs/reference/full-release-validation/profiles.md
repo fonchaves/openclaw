@@ -103,3 +103,5 @@ WhatsApp, or Slack, the matching `OPENCLAW_RELEASE_QA_*_LIVE_CI_ENABLED` repo
 variable must be enabled; otherwise input capture fails instead of silently skipping the lane.
 Use controller groups `qa-parity` or `qa-live` for fresh QA evidence. A direct
 manual `OpenClaw Release Checks` dispatch may use `qa` to aggregate both.
+
+Windows-node compatibility runs in all/candidate qualification and can be selected with rerun_group=windows-node. Stable compatibility is required; preview/main results are explicit advisories, not waivers of stable or other release gates.

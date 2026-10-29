@@ -1,6 +1,6 @@
 // Plugin release pretag pack check tests cover its script-local target and command routing.
 import { existsSync } from "node:fs";
-import { delimiter, dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   pluginReleasePretagExitCode,
@@ -29,6 +29,7 @@ const tempDirs: string[] = [];
 afterEach(() => {
   cleanupTempDirs(tempDirs);
   runManagedCommandMock.mockReset();
+  vi.unstubAllEnvs();
 });
 
 function createDualPublishPluginRepo() {
@@ -48,7 +49,7 @@ describe("scripts/plugin-release-pretag-pack-check.ts", () => {
 
     await runPluginReleasePretagPackCheck(repoDir);
 
-    expect(runManagedCommandMock).toHaveBeenCalledTimes(3);
+    expect(runManagedCommandMock).toHaveBeenCalledTimes(4);
     expect(runManagedCommandMock).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({
@@ -79,7 +80,7 @@ describe("scripts/plugin-release-pretag-pack-check.ts", () => {
       }),
     );
     expect(runManagedCommandMock).toHaveBeenNthCalledWith(
-      3,
+      4,
       expect.objectContaining({
         args: ["scripts/plugin-clawhub-publish.sh", "--pack", "extensions/demo-plugin"],
         bin: "bash",
@@ -89,7 +90,7 @@ describe("scripts/plugin-release-pretag-pack-check.ts", () => {
         timeoutMs: 600_000,
       }),
     );
-    const clawHubOptions = runManagedCommandMock.mock.calls[2]?.[0] as {
+    const clawHubOptions = runManagedCommandMock.mock.calls[3]?.[0] as {
       env?: NodeJS.ProcessEnv;
     };
     expect(clawHubOptions.env?.OPENCLAW_CLAWHUB_PACK_OUTPUT_DIR).toContain("clawhub-0");
@@ -106,12 +107,12 @@ describe("scripts/plugin-release-pretag-pack-check.ts", () => {
 
     await runPluginReleasePretagPackCheck(repoDir, { timeoutMs: 321 });
 
-    expect(runManagedCommandMock).toHaveBeenCalledTimes(6);
+    expect(runManagedCommandMock).toHaveBeenCalledTimes(7);
     expect(runManagedCommandMock.mock.calls[0]?.[0]).toMatchObject({
       args: expect.arrayContaining(["--package", "extensions/demo-plugin"]),
       timeoutMs: 321,
     });
-    expect(runManagedCommandMock.mock.calls[3]?.[0]).toMatchObject({
+    expect(runManagedCommandMock.mock.calls[4]?.[0]).toMatchObject({
       args: expect.arrayContaining(["--package", "extensions/second-plugin"]),
       timeoutMs: 321,
     });
@@ -123,7 +124,7 @@ describe("scripts/plugin-release-pretag-pack-check.ts", () => {
 
     await runPluginReleasePretagPackCheck(repoDir, { timeoutMs: 321 });
 
-    expect(runManagedCommandMock).toHaveBeenCalledTimes(3);
+    expect(runManagedCommandMock).toHaveBeenCalledTimes(4);
     for (const [options] of runManagedCommandMock.mock.calls) {
       expect(options).toMatchObject({ timeoutMs: 321 });
     }
@@ -183,23 +184,71 @@ describe("scripts/plugin-release-pretag-pack-check.ts", () => {
     "retains temporary inputs only when managed cleanup reports %s work",
     async (processTreeState) => {
       const repoDir = createDualPublishPluginRepo();
-      runManagedCommandMock.mockResolvedValueOnce(0).mockRejectedValueOnce(
-        Object.assign(new Error("managed cleanup failed"), {
-          code: "EPROCESSGROUP_CLEANUP_FAILED",
-          processTreeState,
-        }),
-      );
+      runManagedCommandMock
+        .mockResolvedValueOnce(0)
+        .mockResolvedValueOnce(0)
+        .mockRejectedValueOnce(
+          Object.assign(new Error("managed cleanup failed"), {
+            code: "EPROCESSGROUP_CLEANUP_FAILED",
+            processTreeState,
+          }),
+        );
       await expect(runPluginReleasePretagPackCheck(repoDir)).rejects.toMatchObject({
         code: "EPROCESSGROUP_CLEANUP_FAILED",
         processTreeState,
       });
-      const options = runManagedCommandMock.mock.calls[1]?.[0] as {
-        env: NodeJS.ProcessEnv;
-      };
-      const wrapperDir = options.env.PATH!.split(delimiter)[0]!;
-      const tempRoot = dirname(wrapperDir);
+      const options = runManagedCommandMock.mock.calls[2]?.[0] as { args: string[] };
+      const tempRoot = dirname(options.args[2]!);
       tempDirs.push(tempRoot);
       expect(existsSync(tempRoot)).toBe(processTreeState !== "terminated");
     },
   );
+  it("materializes once from the executing tooling root and passes only the exact absolute CLI", async () => {
+    const repoDir = createDualPublishPluginRepo();
+    vi.stubEnv("OPENCLAW_CLAWHUB_CLI", "/untrusted/cli");
+    runManagedCommandMock.mockResolvedValue(0);
+    await runPluginReleasePretagPackCheck(repoDir);
+    const install = runManagedCommandMock.mock.calls[2]?.[0];
+    const pack = runManagedCommandMock.mock.calls[3]?.[0];
+    expect(install).toMatchObject({
+      bin: "bash",
+      args: [
+        resolve("scripts/materialize-clawhub-cli.sh"),
+        resolve(".github/release/clawhub-cli"),
+        expect.any(String),
+      ],
+      cwd: resolve("."),
+      env: expect.objectContaining({ npm_config_min_release_age: "7" }),
+      shell: false,
+      requireProcessTreeExit: process.platform !== "win32",
+    });
+    expect(pack.env.OPENCLAW_CLAWHUB_CLI).toBe(join(install.args[2], "node_modules/.bin/clawhub"));
+    expect(pack.env.OPENCLAW_CLAWHUB_CLI).not.toContain(repoDir);
+    expect(
+      runManagedCommandMock.mock.calls.filter(([call]) =>
+        call.args[0].endsWith("materialize-clawhub-cli.sh"),
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("fails closed on materializer failure without invoking ClawHub or retrying npm-exec", async () => {
+    const repoDir = createDualPublishPluginRepo();
+    runManagedCommandMock
+      .mockResolvedValueOnce(0)
+      .mockResolvedValueOnce(0)
+      .mockResolvedValueOnce(9);
+    await expect(runPluginReleasePretagPackCheck(repoDir)).rejects.toMatchObject({ code: 9 });
+    expect(runManagedCommandMock).toHaveBeenCalledTimes(3);
+    expect(runManagedCommandMock.mock.calls[2]?.[0].args[0]).toBe(
+      resolve("scripts/materialize-clawhub-cli.sh"),
+    );
+  });
+
+  it("rejects a custom package override before running any command", async () => {
+    vi.stubEnv("CLAWHUB_CLI_PACKAGE", "clawhub@latest");
+    await expect(runPluginReleasePretagPackCheck(createDualPublishPluginRepo())).rejects.toThrow(
+      "overrides are not supported",
+    );
+    expect(runManagedCommandMock).not.toHaveBeenCalled();
+  });
 });

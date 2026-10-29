@@ -198,6 +198,40 @@ async function createMediaFixture(scenario: Scenario, managed = false) {
 type MediaFixture = Awaited<ReturnType<typeof createMediaFixture>>;
 type StartedHarness = ReturnType<typeof createStartedThreadHarness>;
 
+async function relocateSteeringImage(
+  fixture: MediaFixture,
+  source: "session" | "sibling" | "shared",
+) {
+  const stateDir = path.dirname(getMediaDir());
+  const sandboxesDir = path.join(stateDir, "sandboxes");
+  const sharedWorkspaceDir = path.join(stateDir, "workspace");
+  await Promise.all([
+    fs.mkdir(sandboxesDir, { recursive: true }),
+    fs.mkdir(sharedWorkspaceDir, { recursive: true }),
+  ]);
+  const sessionWorkspace = await fs.mkdtemp(path.join(sandboxesDir, "steering-session-"));
+  const siblingWorkspace = await fs.mkdtemp(path.join(sandboxesDir, "steering-sibling-"));
+  const sharedWorkspace = await fs.mkdtemp(path.join(sharedWorkspaceDir, "steering-shared-"));
+  managedFixtures.push(sessionWorkspace, siblingWorkspace, sharedWorkspace);
+  fixture.params.workspaceDir = sessionWorkspace;
+  const sourceDir =
+    source === "session"
+      ? sessionWorkspace
+      : source === "sibling"
+        ? siblingWorkspace
+        : sharedWorkspace;
+  const imagePath = path.join(sourceDir, `${source}.png`);
+  const imageBytes = createSolidPngBuffer(1, 1, { r: 0, g: 0, b: 255 });
+  await fs.writeFile(imagePath, imageBytes);
+  const media = [{ path: imagePath, contentType: "image/png" }];
+  fixture.options.media = media;
+  fixture.options.imageOrder = ["offloaded"];
+  fixture.message["__openclaw"] = { media };
+  fixture.recorder.message = fixture.message;
+  fixture.options.userTurnTranscriptRecorder = fixture.recorder;
+  return imageBytes;
+}
+
 async function withActiveMediaTurn(
   fixture: MediaFixture,
   harness: StartedHarness,
@@ -261,6 +295,48 @@ function registerSteeringWorkspace(
 }
 
 describe("Codex active-run steering media", () => {
+  it.each([
+    { source: "session", accepted: true },
+    { source: "sibling", accepted: false },
+    { source: "shared", accepted: false },
+  ] as const)(
+    "with workspaceOnly false accepts $source workspace images: $accepted",
+    async ({ source, accepted: expectedAccepted }) => {
+      const fixture = await createMediaFixture("offloaded");
+      fixture.params.config = {
+        ...fixture.params.config,
+        tools: { ...fixture.params.config?.tools, fs: { workspaceOnly: false } },
+      };
+      const imageBytes = await relocateSteeringImage(fixture, source);
+      const harness = createStartedThreadHarness();
+      await withActiveMediaTurn(fixture, harness, async () => {
+        const accepted = vi.fn();
+        expect(
+          queueAgentHarnessMessage(fixture.params.sessionId, "inspect this", {
+            ...fixture.options,
+            onQueueAccepted: accepted,
+          }),
+        ).toBe(true);
+        await vi.waitFor(
+          () => expect(accepted).toHaveBeenCalledExactlyOnceWith(expectedAccepted),
+          fastWait,
+        );
+        const steers = harness.requests.filter((entry) => entry.method === "turn/steer");
+        if (expectedAccepted) {
+          expect(steers).toHaveLength(1);
+          expect((steers[0]!.params as SteerRequest).input).toEqual([
+            { type: "text", text: "inspect this", text_elements: [] },
+            { type: "image", url: `data:image/png;base64,${imageBytes.toString("base64")}` },
+          ]);
+        } else {
+          expect(steers).toEqual([]);
+          expect(fixture.recorder.persistApproved).not.toHaveBeenCalled();
+          expect(await fixture.readSteeredMessages()).toEqual([]);
+        }
+      });
+    },
+  );
+
   it.each(["off", "ro"] as const)(
     "prepares remote attachments with sandbox access %s without changing images or transcript",
     async (workspaceAccess) => {

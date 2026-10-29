@@ -1,6 +1,6 @@
 import { createDeferred } from "openclaw/plugin-sdk/extension-shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { OpenClawConfig } from "../runtime-api.js";
+import type { MSTeamsConfig, OpenClawConfig } from "../runtime-api.js";
 import {
   getMSTeamsIngressMockState,
   gateIngressAcceptThenDispatch,
@@ -26,6 +26,7 @@ import {
 } from "./monitor-lifecycle.test-support.js";
 import { createNativeSsoProcessor, createSigninEvent } from "./monitor-sso.test-helpers.js";
 import { monitorMSTeamsProvider } from "./monitor.js";
+import { resolveMSTeamsRouteConfig } from "./policy.js";
 import type { MSTeamsPollStore } from "./polls.js";
 
 async function waitForMSTeamsTestState(assertion: () => void | Promise<void>): Promise<void> {
@@ -693,5 +694,53 @@ describe("monitorMSTeamsProvider lifecycle", () => {
 
     abort.abort();
     await task;
+  });
+  it.each<{ name: string } & Pick<MSTeamsConfig, "teams" | "groupAllowFrom">>([
+    { name: "unresolved team", teams: { Engineering: {} } },
+    {
+      name: "unresolved channels on a stable team",
+      teams: { "19:team@thread.tacv2": { channels: { Roadmap: {} } } },
+    },
+    {
+      name: "unresolved channels on a wildcard team",
+      teams: { "*": { channels: { Roadmap: {} } } },
+    },
+    { name: "unresolved group senders", groupAllowFrom: ["Bob Builder"] },
+  ])("release936 rejects admission after startup with $name", async (testCase) => {
+    const abort = new AbortController();
+    const cfg = createConfig();
+    updateMSTeamsConfig(cfg, {
+      dmPolicy: "open",
+      allowFrom: ["*"],
+      groupPolicy: testCase.groupAllowFrom ? "allowlist" : "open",
+      requireMention: false,
+      teams: testCase.teams,
+      groupAllowFrom: testCase.groupAllowFrom,
+    });
+    const before = structuredClone(cfg);
+    resolveAllowlistMocks.resolveMSTeamsTeamsConfig.mockRejectedValueOnce(
+      new Error("Graph unavailable"),
+    );
+    const task = runProvider(abort, cfg);
+    try {
+      await waitForMSTeamsTestState(() => expect(createMSTeamsActivityHandler).toHaveBeenCalled());
+      const projected = requireRegisteredMSTeamsConfig();
+      if (testCase.groupAllowFrom) {
+        expect(projected.channels?.msteams?.groupAllowFrom?.length).toBeGreaterThan(0);
+        expect(projected.channels?.msteams?.groupAllowFrom).not.toContain("*");
+      } else {
+        expect(
+          resolveMSTeamsRouteConfig({
+            cfg: projected.channels?.msteams,
+            teamId: "19:team@thread.tacv2",
+            conversationId: "19:other@thread.tacv2",
+          }).allowed,
+        ).toBe(false);
+      }
+      expect(cfg).toEqual(before);
+    } finally {
+      abort.abort();
+      await task;
+    }
   });
 });

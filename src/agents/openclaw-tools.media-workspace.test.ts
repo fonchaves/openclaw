@@ -3,14 +3,23 @@ import path from "node:path";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
+import { resolveStateDir } from "../config/paths.js";
 import { createDeferredCore } from "../shared/deferred.js";
 import { createOpenClawTools } from "./openclaw-tools.js";
 import { applyNodesToolWorkspaceGuard } from "./openclaw-tools.nodes-workspace-guard.js";
+import { subagentAttachmentRootForRun } from "./subagents/subagent-attachment-paths.js";
 import { createHostSandboxFsBridge } from "./test-helpers/host-sandbox-fs-bridge.js";
+import { getGatewayToolCallerIdentity } from "./tools/gateway-caller-context.js";
+import { callInProcessGatewayTool } from "./tools/in-process-gateway.js";
 import { loadMediaToolReferences } from "./tools/media-tool-shared.js";
 
 vi.mock("./openclaw-plugin-tools.js", () => ({
   resolveOpenClawPluginToolsForOptions: () => [],
+}));
+
+vi.mock("./tools/in-process-gateway.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./tools/in-process-gateway.js")>()),
+  callInProcessGatewayTool: vi.fn(),
 }));
 
 const tempDirs = useAutoCleanupTempDirTracker(afterEach);
@@ -224,6 +233,105 @@ describe("media references in task workspaces", () => {
       await expect(loadReferences([outsidePath])).rejects.toThrow(
         /not under an allowed directory/i,
       );
+    },
+  );
+});
+
+async function defaultMediaDir(prefix: string) {
+  const root = path.join(resolveStateDir(), "media");
+  await fs.mkdir(root, { recursive: true });
+  return tempDirs.make(prefix, root);
+}
+
+describe("derived factory filesystem policy", () => {
+  it.each([
+    { name: "global", config: { tools: { fs: { workspaceOnly: true } } } },
+    {
+      name: "agent",
+      config: { agents: { entries: { main: { tools: { fs: { workspaceOnly: true } } } } } },
+    },
+  ])("restricts image reads with $name config and no explicit fsPolicy", async ({ config }) => {
+    const workspaceDir = await defaultMediaDir("derived-workspace-");
+    const outside = path.join(await defaultMediaDir("derived-outside-"), "image.png");
+    await fs.writeFile(path.join(workspaceDir, "image.png"), png);
+    await fs.writeFile(outside, png);
+    const tool = createMediaTool("view_image", { workspaceDir, config });
+    await expectLoadedImage(tool, "image.png");
+    await expect(tool.execute("outside", { path: outside })).rejects.toThrow(
+      /not under an allowed directory/i,
+    );
+  });
+
+  it.each([
+    { workspaceOnly: true, mode: "workspace" as const, allowed: false },
+    { workspaceOnly: true, mode: "full" as const, allowed: true },
+    { workspaceOnly: false, mode: "guarded" as const, allowed: false },
+    { workspaceOnly: false, mode: "read-only" as const, allowed: false },
+  ])(
+    "honors session mode $mode with global workspaceOnly=$workspaceOnly",
+    async ({ workspaceOnly, mode, allowed }) => {
+      const workspaceDir = await defaultMediaDir("derived-workspace-");
+      const root = await defaultMediaDir("derived-session-");
+      const inside = path.join(root, "image.png");
+      const outside = path.join(workspaceDir, "image.png");
+      await fs.writeFile(inside, png);
+      await fs.writeFile(outside, png);
+      const tool = createMediaTool("view_image", {
+        workspaceDir,
+        config: { tools: { fs: { workspaceOnly } } },
+        sessionPermissionPolicy: { root, mode },
+      });
+      await expectLoadedImage(tool, inside);
+      if (allowed) {
+        await expectLoadedImage(tool, outside);
+      } else {
+        await expect(tool.execute("outside", { path: outside })).rejects.toThrow(
+          /not under an allowed directory/i,
+        );
+      }
+    },
+  );
+
+  it("keeps host-owned attachments readable without widening sibling access", async () => {
+    const state = tempDirs.make("derived-state-");
+    vi.stubEnv("OPENCLAW_STATE_DIR", state);
+    try {
+      const workspaceDir = await defaultMediaDir("derived-workspace-");
+      const agentSessionKey = "agent:main:subagent:derived-proof";
+      const root = subagentAttachmentRootForRun("main", agentSessionKey)!;
+      await fs.mkdir(root, { recursive: true });
+      const attachment = path.join(root, "image.png");
+      const sibling = path.join(await defaultMediaDir("sibling-"), "sibling.png");
+      await fs.writeFile(attachment, png);
+      await fs.writeFile(sibling, png);
+      const tool = createMediaTool("view_image", {
+        workspaceDir,
+        agentSessionKey,
+        config: { tools: { fs: { workspaceOnly: true } } },
+      });
+      await expectLoadedImage(tool, attachment);
+      await expect(tool.execute("sibling", { path: sibling })).rejects.toThrow(
+        /not under an allowed directory/i,
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it.each([true, false])(
+    "carries workspaceOnly=%s to the delegation authority sink",
+    async (workspaceOnly) => {
+      const call = vi.mocked(callInProcessGatewayTool);
+      call.mockImplementation(async () => {
+        expect(getGatewayToolCallerIdentity()?.fullPermission).toBe(!workspaceOnly);
+        return { sessionId: "proof", reply: "Done." };
+      });
+      const tool = createMediaTool("openclaw", {
+        agentSessionKey: "agent:main:proof",
+        config: { tools: { fs: { workspaceOnly }, exec: { mode: "full" } } },
+      });
+      await tool.execute("delegate", { message: "Inspect synthetic config." });
+      call.mockReset();
     },
   );
 });

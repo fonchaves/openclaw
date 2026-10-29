@@ -299,3 +299,48 @@ describe("msteams policy", () => {
     });
   });
 });
+
+describe("release936 synthetic restriction namespace", () => {
+  it("preserves ordinary names that equal the normalized marker spelling", () => {
+    const name = "19-openclaw-unresolved-allowlist-thread-unresolved";
+    const cfg = { teams: { [name]: { channels: { [name]: {} } } } };
+    expect(
+      resolveMSTeamsRouteConfig({ cfg, teamName: name, channelName: name, allowNameMatching: true })
+        .allowed,
+    ).toBe(true);
+    expect(
+      resolveMSTeamsRouteConfig({
+        cfg,
+        teamName: name,
+        channelName: name,
+        allowNameMatching: false,
+      }).allowed,
+    ).toBe(false);
+  });
+  it("ignores marker grants but retains configured restrictions and valid mixed IDs", () => {
+    const marker = "19:openclaw-unresolved-allowlist@thread.unresolved";
+    const id = "19:actual-group@thread.tacv2";
+    const cfg = {
+      teams: {
+        [marker]: {},
+        "19:allowed-team@thread.tacv2": { channels: { [marker]: {}, [id]: {} } },
+      },
+    };
+    const before = structuredClone(cfg);
+    expect(
+      resolveMSTeamsRouteConfig({ cfg, teamId: "19:allowed-team@thread.tacv2", conversationId: id })
+        .allowed,
+    ).toBe(true);
+    expect(resolveMSTeamsRouteConfig({ cfg, teamId: marker, conversationId: id }).allowed).toBe(
+      false,
+    );
+    expect(
+      resolveMSTeamsRouteConfig({
+        cfg,
+        teamId: "19:allowed-team@thread.tacv2",
+        conversationId: marker,
+      }).allowed,
+    ).toBe(false);
+    expect(cfg).toEqual(before);
+  });
+});
