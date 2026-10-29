@@ -11,7 +11,6 @@ import { isPidAlive } from "../shared/pid-alive.js";
 import { readPidFile, waitForPidToExit } from "../test-utils/process-tree.js";
 import { withTempDir } from "../test-utils/temp-dir.js";
 import { attachChildProcessBridge } from "./child-process-bridge.js";
-import { hasCommandProcessCleanupError } from "./exec-result.js";
 import * as execSpawn from "./exec-spawn.js";
 import {
   resolveCommandEnv,
@@ -844,19 +843,15 @@ describe("runCommandBuffered", () => {
   );
 
   it.runIf(process.platform !== "win32")(
-    "preserves cleanup uncertainty alongside signal and output",
+    "preserves a child-requested signal in buffered results",
     async () => {
       const result = await runCommandBuffered(
-        [
-          process.execPath,
-          "-e",
-          "require('node:fs').writeSync(1, 'out'); require('node:fs').writeSync(2, 'err'); process.kill(process.pid, 'SIGTERM')",
-        ],
-        { timeoutMs: 2000 },
+        [process.execPath, "-e", "process.kill(process.pid, 'SIGTERM')"],
+        { timeoutMs: 2_000 },
       );
+
       expect(result).toMatchObject({ code: null, signal: "SIGTERM", termination: "signal" });
-      expect([result.stdout, result.stderr]).toEqual([Buffer.from("out"), Buffer.from("err")]);
-      expect(hasCommandProcessCleanupError(result.error)).toBe(true);
+      expect(result.error).toBeUndefined();
     },
   );
 

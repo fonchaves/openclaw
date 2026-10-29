@@ -26,20 +26,12 @@ import {
 import { changelogEntryPath, isReleaseChangelogPath } from "./lib/release-changelog.mjs";
 import { validateQualificationBaselines } from "./lib/release-upgrade-baseline.mjs";
 import { classifyReleaseTrain, parseReleaseVersion } from "./lib/release-version.mjs";
-import {
-  evaluateWindowsNodeChildPolicy,
-  releaseChildAdvisories,
-} from "./lib/release-windows-node-policy.mjs";
 import { validateQualificationCoverage } from "./release-qualification-coverage.mjs";
 
-export {
-  MAX_RELEASE_ARTIFACT_BYTES,
-  serializeReleaseArtifact,
-  buildReleaseValidationManifest,
-  releaseChildAdvisories,
-};
+export { MAX_RELEASE_ARTIFACT_BYTES, serializeReleaseArtifact, buildReleaseValidationManifest };
 
-function validateReleaseAdvisoryJobs(value, expected = []) {
+function validateReleaseAdvisoryJobs(value) {
+  const expected = [];
   const recorded = value === undefined ? [] : value;
   if (!Array.isArray(recorded) || jsonSha256(recorded) !== jsonSha256(expected)) {
     throw new Error("Release advisory jobs differ from the release policy evidence");
@@ -68,12 +60,7 @@ export function validateReleaseManifestAdvisoryJobs(manifest) {
       throw new Error("Release manifest contains failed selected job evidence");
     }
   }
-  return validateReleaseAdvisoryJobs(
-    manifest.advisoryJobs,
-    Object.entries(manifest.childEvidence ?? {}).flatMap(([key, child]) =>
-      releaseChildAdvisories({ ...child, key }),
-    ),
-  );
+  return validateReleaseAdvisoryJobs(manifest.advisoryJobs);
 }
 
 const SUCCESSFUL_JOB_CONCLUSIONS = new Set(["neutral", "skipped", "success"]);
@@ -234,7 +221,6 @@ const LEGACY_CHILD_SPECS = Object.freeze([
       "all",
       "install-smoke",
       "cross-os",
-      "windows-node",
       "live-e2e",
       "package",
       "qa-parity",
@@ -286,7 +272,7 @@ const CHILD_SPECS = Object.freeze([
     displayName: "OpenClaw Release Checks",
     key: "releaseChecksCandidate",
     parentJobName: "Run release checks candidate validation",
-    rerunGroups: ["all", "cross-os", "windows-node", "live-e2e", "package"],
+    rerunGroups: ["all", "cross-os", "live-e2e", "package"],
     suffix: "-release-checks-candidate",
     workflow: "openclaw-release-checks.yml",
   },
@@ -833,9 +819,7 @@ function candidatePreparationRequired(input) {
   ) {
     return false;
   }
-  if (
-    ["all", "plugin-prerelease", "cross-os", "windows-node", "package"].includes(input.rerunGroup)
-  ) {
+  if (["all", "plugin-prerelease", "cross-os", "package"].includes(input.rerunGroup)) {
     return true;
   }
   return input.rerunGroup === "live-e2e" && !stringValue(input.liveSuiteFilter).trim();
@@ -855,7 +839,7 @@ function releaseExecutionChildRequired(spec, input, npmTelegramForAll) {
       return spec.rerunGroups.includes(input.rerunGroup);
     case "releaseChecksCandidate":
       return (
-        ["all", "cross-os", "windows-node", "package"].includes(input.rerunGroup) ||
+        ["all", "cross-os", "package"].includes(input.rerunGroup) ||
         (input.rerunGroup === "live-e2e" && !stringValue(input.liveSuiteFilter).trim())
       );
     default:
@@ -1609,22 +1593,16 @@ function isFailedJob(job) {
 }
 
 export function terminalPolicyPass(child) {
-  const policy = evaluateWindowsNodeChildPolicy({ child });
-  return (
-    child.status === "completed" &&
-    child.jobs.every((job) => job.status === "completed") &&
-    (child.conclusion === "success" ||
-      (child.conclusion === "failure" && policy.advisoryJobs.some(isFailedJob))) &&
-    policy.advisoryFailureAllowed &&
-    policy.blockingJobs.length === 0
-  );
+  const failures = child.jobs.filter(isFailedJob);
+  return child.status === "completed" && child.conclusion === "success" && failures.length === 0;
 }
 
 /** Choose the single GitHub rerun request that can repair a terminal child's blocking jobs. */
 export function planReleaseChildRerun({ childKey, jobs }) {
-  const failed = evaluateWindowsNodeChildPolicy({ child: { key: childKey, jobs } })
-    .blockingJobs.map((job) => job.name)
-    .toSorted((left, right) => (left === right ? 0 : left < right ? -1 : 1));
+  const failed = jobs
+    .filter(isFailedJob)
+    .map((job) => job.name)
+    .toSorted();
   if (failed.length === 0) {
     throw new Error(`${childKey} has no blocking failed job to rerun`);
   }
@@ -1703,7 +1681,7 @@ export function classifyReleaseSnapshot({
     (child.errors ?? []).filter((error) => error.kind !== "dispatch_missing"),
   );
   const childJobBlockers = selected.flatMap((child) =>
-    evaluateWindowsNodeChildPolicy({ child }).blockingJobs.map((job) => ({
+    child.jobs.filter(isFailedJob).map((job) => ({
       child: child.key,
       conclusion: job.conclusion,
       job: job.name,
@@ -1754,7 +1732,7 @@ export function classifyReleaseSnapshot({
     .toSorted((left, right) => String(left.primaryAt).localeCompare(String(right.primaryAt), "en"));
   return {
     activeRunIds,
-    advisoryJobs: selected.flatMap(releaseChildAdvisories),
+    advisoryJobs: [],
     blockerCount: rawBlockers.length,
     blockerIndex: blockerIndex(rawBlockers),
     blockers,
@@ -2329,12 +2307,7 @@ export function validateReleaseStateArtifact(payload, expected, expectedMode) {
   return {
     ...payload,
     activeRunIds,
-    advisoryJobs: validateReleaseAdvisoryJobs(
-      payload.advisoryJobs,
-      Object.entries(children).flatMap(([key, child]) =>
-        releaseChildAdvisories({ ...child, key, jobs: child.timing.jobs }),
-      ),
-    ),
+    advisoryJobs: validateReleaseAdvisoryJobs(payload.advisoryJobs),
     blockerCount: machineEvidence ? payload.blockerCount : null,
     blockerIndex: completeBlockerIndex,
     blockers,

@@ -39,7 +39,6 @@ import {
 import { resolveMSTeamsPrivateQaRuntime } from "./qa/private-runtime.js";
 import { createMSTeamsReplayContext } from "./replay-context.js";
 import {
-  keepConfiguredMSTeamsAllowlistActive,
   looksLikeMSTeamsConversationId,
   projectStableMSTeamsGroupAllowlist,
   projectStableMSTeamsUserAllowlist,
@@ -179,10 +178,6 @@ export async function monitorMSTeamsProvider(
     runtime.error?.(
       `msteams resolve failed; mutable allowlist entries are disabled. ${formatUnknownError(err)}`,
     );
-  }
-
-  if (Array.isArray(configuredGroupAllowFrom)) {
-    groupAllowFrom = keepConfiguredMSTeamsAllowlistActive(configuredGroupAllowFrom, groupAllowFrom);
   }
 
   if (configuredGroupAllowFrom == null && groupAllowFrom) {

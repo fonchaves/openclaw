@@ -27,7 +27,6 @@ vi.mock("./graph-users.js", () => ({
 }));
 
 import {
-  keepConfiguredMSTeamsAllowlistActive,
   looksLikeMSTeamsTargetId,
   projectStableMSTeamsGroupAllowlist,
   projectStableMSTeamsUserAllowlist,
@@ -516,55 +515,4 @@ describe("looksLikeMSTeamsTargetId", () => {
       expect(looksLikeMSTeamsTargetId(raw)).toBe(false);
     },
   );
-});
-
-describe("release936 unresolved restrictions", () => {
-  it("retains a restrictive team map when Graph finds no configured team", async () => {
-    listTeamsByNameWithPageInfo.mockResolvedValue({ items: [], truncated: false });
-    const input = { Engineering: {} };
-    const result = await resolveMSTeamsTeamsConfig({
-      cfg: {},
-      teamIdMode: "bot-framework",
-      teams: input,
-    });
-    expect(Object.keys(result.teams)).toHaveLength(1);
-    expect(result.teams["*"]).toBeUndefined();
-    expect(result.teams["19:outsider@thread.tacv2"]).toBeUndefined();
-    expect(input).toEqual({ Engineering: {} });
-  });
-  it.each(["19:team@thread.tacv2", "*"])(
-    "keeps unresolved channels restrictive beneath %s",
-    async (key) => {
-      listTeamsByNameWithPageInfo.mockResolvedValue({ items: [], truncated: false });
-      listChannelsForTeamWithPageInfo.mockResolvedValue({ items: [], truncated: false });
-      const input = { [key]: { channels: { Roadmap: {} } } };
-      const result = await resolveMSTeamsTeamsConfig({
-        cfg: {},
-        teamIdMode: "bot-framework",
-        teams: input,
-      });
-      expect(Object.keys(result.teams[key]?.channels ?? {})).toHaveLength(1);
-      expect(result.teams[key]?.channels?.["*"]).toBeUndefined();
-      expect(result.teams[key]?.channels?.["19:outsider@thread.tacv2"]).toBeUndefined();
-      expect(input).toEqual({ [key]: { channels: { Roadmap: {} } } });
-    },
-  );
-});
-
-describe("release936 sender projection contract", () => {
-  it("keeps a nonempty unresolved sender restriction without mutating config", () => {
-    const configured = ["Bob Builder"];
-    const projected = keepConfiguredMSTeamsAllowlistActive(configured, []);
-    expect(projected).toHaveLength(1);
-    expect(projected).not.toContain("*");
-    expect(projected?.some((entry) => /^accessGroup:/i.test(entry))).toBe(false);
-    expect(configured).toEqual(["Bob Builder"]);
-  });
-  it("preserves stable grants and intentional empty or absent lists", () => {
-    const id = "11111111-1111-1111-1111-111111111111";
-    expect(keepConfiguredMSTeamsAllowlistActive([id, "Bob"], [id])).toEqual([id]);
-    expect(keepConfiguredMSTeamsAllowlistActive([], [])).toEqual([]);
-    expect(keepConfiguredMSTeamsAllowlistActive(["  "], [])).toEqual([]);
-    expect(keepConfiguredMSTeamsAllowlistActive(undefined, undefined)).toBeUndefined();
-  });
 });

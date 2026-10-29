@@ -454,7 +454,7 @@ describe("FRV continuation preflight", () => {
     const logs = {
       dispatch: [
         `TARGET_SHA: ${TARGET_SHA}`,
-        `Artifact dispatch ${stage} target ${TARGET_SHA}: https://github.com/${REPOSITORY}/actions/runs/81 (attempt 1)`,
+        `Dispatched full-release-artifacts.yml: https://github.com/${REPOSITORY}/actions/runs/81 (attempt 1)`,
         ...(stage === "npm" ? ["Artifact preparation npm identity: job 901 (attempt 1)"] : []),
       ].join("\n"),
     };
@@ -463,34 +463,7 @@ describe("FRV continuation preflight", () => {
       getReleaseEvidenceClient: () => ({
         ...methods.getReleaseEvidenceClient(),
         getWorkflowSource: () =>
-          [
-            "name: Full Release Validation",
-            "env:",
-            '  FULL_RELEASE_ARTIFACT_RECOVERY_CONTRACT: "2"',
-            '  FULL_RELEASE_ARTIFACT_DISPATCH_LOG_CONTRACT: "1"',
-            "jobs:",
-            "  prepare_npm_package:",
-            '    name: "Prepare release npm artifacts"',
-            "    env:",
-            "      CHILD_WORKFLOW_KIND: artifact-npm",
-            '      PUBLICATION_ARTIFACTS_REUSED: "${{ needs.evidence_reuse.outputs.publication_artifacts_reused }}"',
-            "    steps:",
-            "      - id: reused",
-            "        if: env.PUBLICATION_ARTIFACTS_REUSED == 'true'",
-            "  prepare_docker_release:",
-            "    name: Prepare release Docker artifacts",
-            "    env:",
-            "      CHILD_WORKFLOW_KIND: artifact-docker",
-            '      PUBLICATION_ARTIFACTS_REUSED: "${{ needs.evidence_reuse.outputs.publication_artifacts_reused }}"',
-            "    steps:",
-            "      - id: reused",
-            "        if: env.PUBLICATION_ARTIFACTS_REUSED == 'true'",
-            "  candidate_acquisition:",
-            "    name: Acquire full release candidate",
-            "    env:",
-            "      CHILD_WORKFLOW_KIND: artifact-candidate",
-            "",
-          ].join("\n"),
+          "name: Full Release Validation\njobs:\n  prepare:\n    steps:\n      - run: node scripts/full-release-artifacts.mjs resolve\n",
       }),
       getParentJobs: async () => [
         ...(await methods.getParentJobs()),
@@ -515,277 +488,12 @@ describe("FRV continuation preflight", () => {
     return { client, producer, logs, selected, plan: plan([selected]) };
   }
 
-  function baselineContractTwoFixture() {
-    const fixture = artifactFixture("npm");
-    const evidenceClient = fixture.client.getReleaseEvidenceClient();
-    fixture.client.getReleaseEvidenceClient = () => ({
-      ...evidenceClient,
-      getWorkflowSource: () =>
-        [
-          "name: Full Release Validation",
-          "env:",
-          '  FULL_RELEASE_ARTIFACT_RECOVERY_CONTRACT: "2"',
-          "jobs:",
-          "  prepare_npm_package:",
-          '    name: "Prepare release npm artifacts"',
-          "    env:",
-          "      CHILD_WORKFLOW_KIND: artifact-npm",
-          "    steps:",
-          "      - run: node scripts/full-release-artifacts.mjs resolve",
-          "",
-        ].join("\n"),
-    });
-    fixture.logs.dispatch = [
-      `TARGET_SHA: ${TARGET_SHA}`,
-      `Dispatched full-release-artifacts.yml: https://github.com/${REPOSITORY}/actions/runs/81 (attempt 1)`,
-      "Artifact preparation npm identity: job 901 (attempt 1)",
-    ].join("\n");
-
-    return fixture;
-  }
-
-  it("rejects an unknown structured-log contract before recovery", async () => {
+  it("retries only failed npm producer jobs, preserves green diagnostics, and verifies the parent", async () => {
     const fixture = artifactFixture();
-    const evidence = fixture.client.getReleaseEvidenceClient();
-    fixture.client.getReleaseEvidenceClient = () => ({
-      ...evidence,
-      getWorkflowSource: () =>
-        evidence
-          .getWorkflowSource()
-          .replace('DISPATCH_LOG_CONTRACT: "1"', 'DISPATCH_LOG_CONTRACT: "9"'),
-    });
-    await expect(preflightContinuation(fixture.plan, "77", fixture.client)).rejects.toThrow(
-      "dispatch log contract is unsupported",
-    );
-    expect(fixture.client.rerunFailed).not.toHaveBeenCalled();
-    expect(fixture.client.rerunParent).not.toHaveBeenCalled();
-  });
-
-  it("retains the original Q structured emitter without a new log marker", async () => {
-    const fixture = artifactFixture();
-    const evidence = fixture.client.getReleaseEvidenceClient();
-    fixture.client.getReleaseEvidenceClient = () => ({
-      ...evidence,
-      getWorkflowSource: () =>
-        evidence
-          .getWorkflowSource()
-          .replace('  FULL_RELEASE_ARTIFACT_DISPATCH_LOG_CONTRACT: "1"\n', "")
-          .replace(
-            "    steps:\n",
-            '    steps:\n      - run: |\n          echo "Artifact dispatch ${CHILD_WORKFLOW_KIND#artifact-} target ${TARGET_SHA}: ${url} (attempt ${child_run_attempt})"\n',
-          ),
-    });
-    await expect(preflightContinuation(fixture.plan, "77", fixture.client)).resolves.toMatchObject({
-      artifactProducers: [{ runId: "81", preparation: { jobId: "901", runAttempt: 1 } }],
-    });
-  });
-
-  it("does not fall back from advertised structured logging to legacy records", async () => {
-    const historical = baselineContractTwoFixture();
-    const fixture = artifactFixture();
-    fixture.logs.dispatch = historical.logs.dispatch;
-    await expect(preflightContinuation(fixture.plan, "77", fixture.client)).rejects.toThrow(
-      "Original npm dispatch identity is unavailable or ambiguous",
-    );
-  });
-
-  it("does not infer structured-log capability from a historical workflow comment", async () => {
-    const fixture = baselineContractTwoFixture();
-    const evidence = fixture.client.getReleaseEvidenceClient();
-    fixture.client.getReleaseEvidenceClient = () => ({
-      ...evidence,
-      getWorkflowSource: () =>
-        evidence.getWorkflowSource() +
-        '\n# echo "Artifact dispatch ${CHILD_WORKFLOW_KIND#artifact-} target ${TARGET_SHA}:',
-    });
-    await expect(preflightContinuation(fixture.plan, "77", fixture.client)).resolves.toMatchObject({
-      artifactProducers: [{ runId: "81" }],
-    });
-  });
-
-  it("recovers exact baseline contract-2 unstructured dispatch with its preparation witness", async () => {
-    const fixture = baselineContractTwoFixture();
     fixture.producer.conclusion = "failure";
-    await expect(preflightContinuation(fixture.plan, "77", fixture.client)).resolves.toMatchObject({
-      artifactProducers: [
-        {
-          request: { stage: "npm" },
-          runId: "81",
-          runAttempt: "1",
-          preparation: { jobId: "901", runAttempt: 1 },
-        },
-      ],
-      pendingArtifactProducers: false,
-    });
-    await expect(
-      continueFailed(fixture.plan, "77", fixture.client, { dryRun: true }),
-    ).resolves.toMatchObject({ action: "would-rerun" });
-    expect(fixture.client.rerunFailed).not.toHaveBeenCalled();
-    expect(fixture.client.rerunParent).not.toHaveBeenCalled();
-  });
-
-  it.each([
-    "missing-preparation",
-    "duplicate-preparation",
-    "repository",
-    "target",
-    "duplicate-dispatch",
-    "producer-source",
-  ])("rejects historical contract-2 identity mismatch: %s before any mutation", async (tamper) => {
-    const fixture = baselineContractTwoFixture();
-    fixture.producer.conclusion = "failure";
-    if (tamper === "missing-preparation") {
-      fixture.logs.dispatch = fixture.logs.dispatch
-        .split("\n")
-        .filter((line) => !line.startsWith("Artifact preparation"))
-        .join("\n");
-    } else if (tamper === "duplicate-preparation") {
-      fixture.logs.dispatch += "\nArtifact preparation npm identity: job 902 (attempt 1)";
-    } else if (tamper === "repository") {
-      fixture.logs.dispatch = fixture.logs.dispatch.replace(REPOSITORY, "other/repository");
-    } else if (tamper === "target") {
-      fixture.logs.dispatch = fixture.logs.dispatch.replace(TARGET_SHA, "c".repeat(40));
-    } else if (tamper === "duplicate-dispatch") {
-      fixture.logs.dispatch += "\n" + fixture.logs.dispatch.split("\n")[1];
-    } else {
-      fixture.producer.head_sha = "c".repeat(40);
-    }
-    await expect(
-      continueFailed(fixture.plan, "77", fixture.client, { dryRun: true }),
-    ).rejects.toThrow(/identity|preparation/);
-    expect(fixture.client.rerunFailed).not.toHaveBeenCalled();
-    expect(fixture.client.rerunParent).not.toHaveBeenCalled();
-  });
-
-  it("preserves consumed-byte rejection for historical contract-2 recovery", async () => {
-    const fixture = baselineContractTwoFixture();
-    fixture.producer.conclusion = "failure";
-    fixture.client.getAttemptJobs = async () => [
-      { ...job("preparation"), id: 901, run_attempt: 1, conclusion: "failure" },
-    ];
-    await expect(
-      continueFailed(
-        { ...fixture.plan, candidate: { producer: { runId: "606" } } },
-        "77",
-        fixture.client,
-      ),
-    ).rejects.toThrow("already supplied the sealed candidate evidence");
-    expect(fixture.client.rerunFailed).not.toHaveBeenCalled();
-    expect(fixture.client.rerunParent).not.toHaveBeenCalled();
-  });
-
-  it.each(["npm", "docker"])(
-    "retries only failed %s producer jobs, preserves green diagnostics, and verifies the parent",
-    async (stage) => {
-      const fixture = artifactFixture(stage);
-      fixture.producer.conclusion = "failure";
-      let parentAttempt = 1;
-      const read = fixture.client.getRun.getMockImplementation()!;
-      fixture.client.getRun.mockImplementation(async (id) =>
-        id === "77"
-          ? rootRun(parentAttempt, parentAttempt === 1 ? "failure" : "success")
-          : structuredClone(await read(id)),
-      );
-      fixture.client.rerunFailed.mockImplementation(async (id: string) => {
-        expect(id).toBe("81");
-        fixture.producer.run_attempt = 2;
-        fixture.producer.conclusion = "success";
-      });
-      fixture.client.rerunParent.mockImplementation(async () => {
-        parentAttempt = 2;
-      });
-      const verify = vi.fn();
-      await expect(
-        continueFailed(fixture.plan, "77", { ...fixture.client, verify }),
-      ).resolves.toMatchObject({ action: "reran-parent" });
-      expect(fixture.client.rerunFailed).toHaveBeenCalledExactlyOnceWith("81");
-      expect(fixture.client.rerunParent).toHaveBeenCalledExactlyOnceWith("77");
-      expect(verify).toHaveBeenCalledWith("77", fixture.plan, expect.any(Number), {
-        "77": 2,
-        "101": 1,
-      });
-    },
-  );
-
-  it("does not claim recovery for a failed candidate producer with undispatched consumers", async () => {
-    const fixture = artifactFixture("candidate");
-    fixture.producer.conclusion = "failure";
-    const missing = withoutChildRunIdentity(child("pluginPrerelease", "202"));
-    fixture.plan = plan([fixture.selected, missing]);
-
-    await expect(preflightContinuation(fixture.plan, "77", fixture.client)).rejects.toThrow(
-      "selected FRV children did not record exact run IDs and attempts: pluginPrerelease; start a fresh all-group FRV",
-    );
-    expect(fixture.client.rerunFailed).not.toHaveBeenCalled();
-    expect(fixture.client.rerunParent).not.toHaveBeenCalled();
-  });
-
-  it("recovers every recoverable failed artifact producer instead of stopping at npm", async () => {
-    const fixture = artifactFixture("npm");
-    fixture.producer.conclusion = "failure";
-    const dockerProducer = {
-      ...structuredClone(fixture.producer),
-      id: 82,
-      display_title: "Full Release Artifacts full-release-validation-77-1-artifacts-docker",
-      html_url: `https://github.com/${REPOSITORY}/actions/runs/82`,
-    };
-    const parentJobs = fixture.client.getParentJobs;
-    fixture.client.getParentJobs = async () =>
-      (await parentJobs()).map((entry) =>
-        entry.name === "Prepare release Docker artifacts"
-          ? Object.assign(entry, { id: 91, conclusion: "success" })
-          : entry,
-      );
-    const getJobLog = fixture.client.getJobLog;
-    fixture.client.getJobLog = async (id: number) =>
-      id === 91
-        ? `Artifact dispatch docker target ${TARGET_SHA}: https://github.com/${REPOSITORY}/actions/runs/82 (attempt 1)`
-        : getJobLog(id);
     let parentAttempt = 1;
     const read = fixture.client.getRun.getMockImplementation()!;
-    fixture.client.getRun.mockImplementation(async (id: string) =>
-      id === "77"
-        ? rootRun(parentAttempt, parentAttempt === 1 ? "failure" : "success")
-        : id === "82"
-          ? structuredClone(dockerProducer)
-          : structuredClone(await read(id)),
-    );
-    fixture.client.rerunFailed.mockImplementation(async (id: string) => {
-      const producer = id === "81" ? fixture.producer : dockerProducer;
-      producer.run_attempt = 2;
-      producer.conclusion = "success";
-    });
-    fixture.client.rerunParent.mockImplementation(async () => {
-      parentAttempt = 2;
-    });
-    await expect(
-      continueFailed(fixture.plan, "77", { ...fixture.client, verify: async () => "{}" }),
-    ).resolves.toMatchObject({ action: "reran-parent" });
-    expect(fixture.client.rerunFailed).toHaveBeenCalledTimes(2);
-    expect(fixture.client.rerunFailed).toHaveBeenCalledWith("81");
-    expect(fixture.client.rerunFailed).toHaveBeenCalledWith("82");
-  });
-
-  it("recovers a failed npm producer while the Docker dispatch job is still active", async () => {
-    const fixture = artifactFixture("npm");
-    fixture.producer.conclusion = "failure";
-    const readParentJobs = fixture.client.getParentJobs;
-    let parentJobsRead = 0;
-    fixture.client.getParentJobs = async () => {
-      parentJobsRead += 1;
-      return (await readParentJobs()).map((entry) =>
-        entry.name === "Prepare release Docker artifacts"
-          ? Object.assign(entry, {
-              id: 91,
-              status: parentJobsRead === 1 ? "in_progress" : "completed",
-              conclusion: parentJobsRead === 1 ? null : "skipped",
-            })
-          : entry,
-      );
-    };
-    let parentAttempt = 1;
-    const read = fixture.client.getRun.getMockImplementation()!;
-    fixture.client.getRun.mockImplementation(async (id: string) =>
+    fixture.client.getRun.mockImplementation(async (id) =>
       id === "77"
         ? rootRun(parentAttempt, parentAttempt === 1 ? "failure" : "success")
         : structuredClone(await read(id)),
@@ -798,60 +506,16 @@ describe("FRV continuation preflight", () => {
     fixture.client.rerunParent.mockImplementation(async () => {
       parentAttempt = 2;
     });
-    vi.useFakeTimers();
-    try {
-      const result = expect(
-        continueFailed(
-          fixture.plan,
-          "77",
-          { ...fixture.client, verify: async () => "{}" },
-          { operationDeadline: Date.now() + 60_000 },
-        ),
-      ).resolves.toMatchObject({ action: "reran-parent" });
-      await Promise.all([result, vi.advanceTimersByTimeAsync(60_000)]);
-    } finally {
-      vi.useRealTimers();
-    }
+    const verify = vi.fn();
+    await expect(
+      continueFailed(fixture.plan, "77", { ...fixture.client, verify }),
+    ).resolves.toMatchObject({ action: "reran-parent" });
     expect(fixture.client.rerunFailed).toHaveBeenCalledExactlyOnceWith("81");
     expect(fixture.client.rerunParent).toHaveBeenCalledExactlyOnceWith("77");
-  });
-
-  it("does not invent rerunnable producers for retained publication artifacts", async () => {
-    const fixture = artifactFixture("npm");
-    Reflect.set(fixture.plan, "evidenceReuse", { requested: true });
-    const parentJobs = fixture.client.getParentJobs;
-    fixture.client.getParentJobs = async () =>
-      (await parentJobs()).map((entry) =>
-        entry.name === "Prepare release Docker artifacts"
-          ? Object.assign(entry, { conclusion: "success" })
-          : entry,
-      );
-    const getJobLog = fixture.client.getJobLog;
-    fixture.client.getJobLog = async (id: number) =>
-      id === 90
-        ? `TARGET_SHA: ${TARGET_SHA}\nRetained original artifact descriptor`
-        : getJobLog(id);
-    await expect(preflightContinuation(fixture.plan, "77", fixture.client)).resolves.toMatchObject({
-      artifactProducers: [],
+    expect(verify).toHaveBeenCalledWith("77", fixture.plan, expect.any(Number), {
+      "77": 2,
+      "101": 1,
     });
-  });
-
-  it("does not let evidence reuse hide a failed producer job", async () => {
-    const fixture = artifactFixture("npm");
-    Reflect.set(fixture.plan, "evidenceReuse", { requested: true });
-    const parentJobs = fixture.client.getParentJobs;
-    fixture.client.getParentJobs = async () =>
-      (await parentJobs()).map((entry) =>
-        entry.name === "Prepare release npm artifacts"
-          ? Object.assign(entry, { conclusion: "failure" })
-          : entry,
-      );
-    const getJobLog = fixture.client.getJobLog;
-    fixture.client.getJobLog = async (id: number) =>
-      id === 90 ? "Retained artifact resolution failed" : getJobLog(id);
-    await expect(preflightContinuation(fixture.plan, "77", fixture.client)).rejects.toThrow(
-      "Original npm dispatch identity is unavailable or ambiguous",
-    );
   });
 
   it("recovers a failed child before the npm dispatch job exposes its completed log", async () => {

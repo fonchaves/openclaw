@@ -1131,7 +1131,7 @@ jobs:
 
   plan_release_workflow_matrices:
     needs: validate_selected_ref
-    runs-on: ${{ inputs.runner_group != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(inputs.runner_group), '"ubuntu-24.04"')) || ('ubuntu-24.04') }}
+    runs-on: ${{ inputs.runner_group != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(inputs.runner_group), toJSON('ubuntu-24.04'))) || ('ubuntu-24.04') }}
     timeout-minutes: 10
     outputs:
       live_docker_count: ${{ steps.plan.outputs.live_docker_count }}
@@ -1899,10 +1899,6 @@ jobs:
         # Missing live credentials still fail this job, but must not suppress non-live diagnostics.
         if: ${{ !cancelled() && contains(matrix.profiles, inputs.release_test_profile) && (success() || steps.validate_credentials.outcome == 'failure') }}
         shell: bash
-        env:
-          NEEDS_PACKAGE: ${{ steps.plan.outputs.needs_package }}
-          PREPUBLISH_PLUGIN_REGISTRY_ARTIFACT_ID: ${{ needs.prepare_docker_e2e_image.outputs.prepublish_plugin_registry_artifact_id }}
-          NEEDS_LIVE_IMAGE: ${{ steps.plan.outputs.needs_live_image }}
         run: |
           set -euo pipefail
           export OPENCLAW_DOCKER_ALL_PROFILE=release-path
@@ -1915,11 +1911,11 @@ jobs:
           export OPENCLAW_DOCKER_ALL_LOG_DIR=".artifacts/docker-tests/release-${DOCKER_E2E_CHUNK}"
           export OPENCLAW_DOCKER_ALL_TIMINGS_FILE=".artifacts/docker-tests/release-${DOCKER_E2E_CHUNK}-timings.json"
           export OPENCLAW_DOCKER_ALL_PNPM_COMMAND="$(command -v pnpm)"
-          if [[ "${NEEDS_PACKAGE}" == "1" &&
-            -n "${PREPUBLISH_PLUGIN_REGISTRY_ARTIFACT_ID}" ]]; then
+          if [[ "${{ steps.plan.outputs.needs_package }}" == "1" &&
+            -n "${{ needs.prepare_docker_e2e_image.outputs.prepublish_plugin_registry_artifact_id }}" ]]; then
             export OPENCLAW_PREPUBLISH_PLUGIN_REGISTRY_DIR=".artifacts/prepublish-plugin-registry"
           fi
-          if [[ "${NEEDS_LIVE_IMAGE}" == "1" ]]; then
+          if [[ "${{ steps.plan.outputs.needs_live_image }}" == "1" ]]; then
             OPENCLAW_SKIP_DOCKER_BUILD=0 OPENCLAW_LIVE_DOCKER_REPO_ROOT="$GITHUB_WORKSPACE" bash .release-harness/scripts/test-live-build-docker.sh
           fi
 
@@ -2251,7 +2247,6 @@ jobs:
         if: ${{ !cancelled() && (success() || steps.validate_credentials.outcome == 'failure') }}
         shell: bash
         env:
-          NEEDS_LIVE_IMAGE: ${{ steps.plan.outputs.needs_live_image }}
           ARTIFACT_SUFFIX: ${{ steps.plan.outputs.artifact_suffix }}
           INCLUDE_RELEASE_PATH_SUITES: ${{ inputs.include_release_path_suites }}
           PREPUBLISH_PLUGIN_REGISTRY_ENABLED: ${{ steps.plan.outputs.needs_package == '1' && needs.prepare_docker_e2e_image.outputs.prepublish_plugin_registry_artifact_id != '' && '1' || '0' }}
@@ -2270,7 +2265,7 @@ jobs:
           if [[ "$PREPUBLISH_PLUGIN_REGISTRY_ENABLED" == "1" ]]; then
             export OPENCLAW_PREPUBLISH_PLUGIN_REGISTRY_DIR=".artifacts/prepublish-plugin-registry"
           fi
-          if [[ "${NEEDS_LIVE_IMAGE}" == "1" ]]; then
+          if [[ "${{ steps.plan.outputs.needs_live_image }}" == "1" ]]; then
             OPENCLAW_SKIP_DOCKER_BUILD=0 OPENCLAW_LIVE_DOCKER_REPO_ROOT="$GITHUB_WORKSPACE" bash .release-harness/scripts/test-live-build-docker.sh
           fi
           export OPENCLAW_DOCKER_ALL_BUILD=0
@@ -2282,11 +2277,9 @@ jobs:
       - name: Summarize targeted Docker E2E lanes
         if: always()
         shell: bash
-        env:
-          ARTIFACT_SUFFIX: ${{ steps.plan.outputs.artifact_suffix }}
         run: |
           set -euo pipefail
-          summary=".artifacts/docker-tests/targeted-${ARTIFACT_SUFFIX}/summary.json"
+          summary=".artifacts/docker-tests/targeted-${{ steps.plan.outputs.artifact_suffix }}/summary.json"
           if [[ ! -f "$summary" ]]; then
             echo "Docker targeted summary missing: \`$summary\`" >> "$GITHUB_STEP_SUMMARY"
             exit 1
@@ -2411,8 +2404,6 @@ jobs:
 
       - name: Run Open WebUI Docker E2E chunk
         shell: bash
-        env:
-          NEEDS_LIVE_IMAGE: ${{ steps.plan.outputs.needs_live_image }}
         run: |
           set -euo pipefail
           export OPENCLAW_DOCKER_ALL_PROFILE=release-path
@@ -2424,7 +2415,7 @@ jobs:
           export OPENCLAW_DOCKER_ALL_LOG_DIR=".artifacts/docker-tests/release-openwebui"
           export OPENCLAW_DOCKER_ALL_TIMINGS_FILE=".artifacts/docker-tests/release-openwebui-timings.json"
           export OPENCLAW_DOCKER_ALL_PNPM_COMMAND="$(command -v pnpm)"
-          if [[ "${NEEDS_LIVE_IMAGE}" == "1" ]]; then
+          if [[ "${{ steps.plan.outputs.needs_live_image }}" == "1" ]]; then
             OPENCLAW_SKIP_DOCKER_BUILD=0 OPENCLAW_LIVE_DOCKER_REPO_ROOT="$GITHUB_WORKSPACE" bash .release-harness/scripts/test-live-build-docker.sh
           fi
 
@@ -2964,24 +2955,6 @@ jobs:
                 }
             fi
           fi
-          metadata=".artifacts/docker-e2e-package/package-candidate.json"
-          if [[ ! -f "$metadata" ]]; then
-            jq -n \
-              --arg name "$name" \
-              --arg packageSourceSha "$package_source_sha" \
-              --arg sha256 "$digest" \
-              --arg version "$version" \
-              '{
-                name: $name,
-                packageSourceSha: $packageSourceSha,
-                sha256: $sha256,
-                version: $version
-              }' > "$metadata"
-          fi
-          [[ -s "$metadata" ]] || {
-            echo "Docker E2E package metadata was not created." >&2
-            exit 1
-          }
           tag="pkg-${digest:0:32}"
           echo "sha256=$digest" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
@@ -2999,9 +2972,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: docker-e2e-package-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            .artifacts/docker-e2e-package/openclaw-current.tgz
-            .artifacts/docker-e2e-package/package-candidate.json
+          path: .artifacts/docker-e2e-package/openclaw-current.tgz
           if-no-files-found: error
 
       - name: Validate prerelease plugin registry artifact identity
@@ -3135,10 +3106,6 @@ jobs:
         if: steps.plan.outputs.needs_e2e_image == '1' && inputs.shared_image_policy == 'existing-only'
         shell: bash
         env:
-          NEEDS_BARE_IMAGE: ${{ steps.plan.outputs.needs_bare_image }}
-          NEEDS_FUNCTIONAL_IMAGE: ${{ steps.plan.outputs.needs_functional_image }}
-          BARE_IMAGE: ${{ steps.image.outputs.bare_image }}
-          FUNCTIONAL_IMAGE: ${{ steps.image.outputs.functional_image }}
           PROVIDED_BARE_IMAGE: ${{ inputs.docker_e2e_bare_image }}
           PROVIDED_FUNCTIONAL_IMAGE: ${{ inputs.docker_e2e_functional_image }}
           SHARED_IMAGE_POLICY: ${{ inputs.shared_image_policy }}
@@ -3148,10 +3115,10 @@ jobs:
           functional_exists=0
           needs_build=0
 
-          if [[ "${NEEDS_BARE_IMAGE}" == "1" ]]; then
-            if docker manifest inspect "${BARE_IMAGE}" >/dev/null 2>&1; then
+          if [[ "${{ steps.plan.outputs.needs_bare_image }}" == "1" ]]; then
+            if docker manifest inspect "${{ steps.image.outputs.bare_image }}" >/dev/null 2>&1; then
               bare_exists=1
-              echo "Shared Docker E2E bare image already exists: ${BARE_IMAGE}"
+              echo "Shared Docker E2E bare image already exists: ${{ steps.image.outputs.bare_image }}"
             elif [[ -n "$PROVIDED_BARE_IMAGE" ]]; then
               echo "Provided bare Docker E2E image does not exist: $PROVIDED_BARE_IMAGE" >&2
               exit 1
@@ -3160,10 +3127,10 @@ jobs:
             fi
           fi
 
-          if [[ "${NEEDS_FUNCTIONAL_IMAGE}" == "1" ]]; then
-            if docker manifest inspect "${FUNCTIONAL_IMAGE}" >/dev/null 2>&1; then
+          if [[ "${{ steps.plan.outputs.needs_functional_image }}" == "1" ]]; then
+            if docker manifest inspect "${{ steps.image.outputs.functional_image }}" >/dev/null 2>&1; then
               functional_exists=1
-              echo "Shared Docker E2E functional image already exists: ${FUNCTIONAL_IMAGE}"
+              echo "Shared Docker E2E functional image already exists: ${{ steps.image.outputs.functional_image }}"
             elif [[ -n "$PROVIDED_FUNCTIONAL_IMAGE" ]]; then
               echo "Provided functional Docker E2E image does not exist: $PROVIDED_FUNCTIONAL_IMAGE" >&2
               exit 1
@@ -3828,13 +3795,12 @@ jobs:
         id: image_exists
         if: inputs.shared_image_policy != 'no-push-artifact'
         env:
-          LIVE_IMAGE: ${{ steps.image.outputs.live_image }}
           SHARED_IMAGE_POLICY: ${{ inputs.shared_image_policy }}
         shell: bash
         run: |
           set -euo pipefail
-          if docker manifest inspect "${LIVE_IMAGE}" >/dev/null 2>&1; then
-            echo "Shared live-test image already exists: ${LIVE_IMAGE}"
+          if docker manifest inspect "${{ steps.image.outputs.live_image }}" >/dev/null 2>&1; then
+            echo "Shared live-test image already exists: ${{ steps.image.outputs.live_image }}"
             echo "exists=1" >> "$GITHUB_OUTPUT"
           else
             if [[ "$SHARED_IMAGE_POLICY" == "existing-only" ]]; then

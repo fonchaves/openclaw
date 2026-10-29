@@ -39,7 +39,6 @@ import {
   readReleaseJobListing,
   releaseCompositeJobsSha256,
   releaseChildSpec,
-  releaseChildAdvisories,
   terminalPolicyPass,
   validateReleaseManifestAdvisoryJobs,
   validateReleaseChildDispatchBinding,
@@ -2407,7 +2406,7 @@ async function validateStrictChildRun({
   }
 
   return {
-    advisoryJobs: releaseChildAdvisories(policyChild),
+    advisoryJobs: [],
     conclusion: run.conclusion,
     dispatchNonce: `full-release-validation-${reused ? childReuse.sourceParentRunId : parentEvidence.manifest.runId}-${originAttempt}${child.suffix}`,
     displayTitle: run.display_title,

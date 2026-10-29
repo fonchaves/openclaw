@@ -19,10 +19,6 @@ import {
   verifyPreparedNpmBundleFiles,
   verifyNpmSourceCheck,
 } from "../../scripts/npm-prepared-bundle.mjs";
-import {
-  encodePluginSdkApiArtifact,
-  decodePluginSdkApiArtifact,
-} from "../../scripts/plugin-sdk-api-release-evidence.mjs";
 import { validatePreflightManifest } from "../../scripts/release-candidate-checklist.mts";
 import { useAutoCleanupTempDirTracker } from "../helpers/temp-dir.js";
 
@@ -890,90 +886,87 @@ describe("prepared npm bundle", () => {
     expect(verifyPreparedNpmBundleFiles({ descriptor: reordered, files })).toEqual(manifest);
   });
 
-  it.each([false, true])(
-    "qualifies exact package bytes with large SDK and npm lock evidence (encoded=%s)",
-    async (encoded) => {
-      const fixture = await bundleFixture();
-      const directory = tempDirs.make("npm-bundle-");
-      const inputDir = join(directory, "prepared");
-      const outputDir = join(directory, "qualified");
-      const downloaded = await downloadPreparedNpmBundle({
-        ...fixture,
-        repository,
-        sourceSha,
-        toolingSha,
-        outputDir: inputDir,
-        token: "test-token",
-        npmDistTag: "beta",
-      });
-      expect(readFileSync(downloaded.tarballPath)).toEqual(
-        fixture.files.get(fixture.manifest.tarballName),
-      );
-      const npmLocks = `${JSON.stringify({ packages: [{ lock: { packages: { "": { description: "x".repeat(3 * 1024 * 1024) } } } }] })}\n`;
-      const dependencyReports = {
-        ...Object.fromEntries(
-          [
-            "dependency-vulnerability-gate",
-            "transitive-manifest-risk-report",
-            "dependency-ownership-surface-report",
-            "dependency-changes-report",
-          ].flatMap((name) => [
-            [`${name}.json`, {}],
-            [`${name}.md`, "# Report\n"],
-          ]),
-        ),
-        "dependency-evidence-summary.md": "# Dependency evidence\n",
-        "npm-package-locks.json": npmLocks,
-        "npm-package-locks.md": "# npm package-lock mirrors\n",
-      };
-      const sdkEvidence = {
+  it("qualifies exact package bytes with large SDK and npm lock evidence", async () => {
+    const fixture = await bundleFixture();
+    const directory = tempDirs.make("npm-bundle-");
+    const inputDir = join(directory, "prepared");
+    const outputDir = join(directory, "qualified");
+    const downloaded = await downloadPreparedNpmBundle({
+      ...fixture,
+      repository,
+      sourceSha,
+      toolingSha,
+      outputDir: inputDir,
+      token: "test-token",
+      npmDistTag: "beta",
+    });
+    expect(readFileSync(downloaded.tarballPath)).toEqual(
+      fixture.files.get(fixture.manifest.tarballName),
+    );
+    const npmLocks = `${JSON.stringify({ packages: [{ lock: { packages: { "": { description: "x".repeat(3 * 1024 * 1024) } } } }] })}\n`;
+    const dependencyReports = {
+      ...Object.fromEntries(
+        [
+          "dependency-vulnerability-gate",
+          "transitive-manifest-risk-report",
+          "dependency-ownership-surface-report",
+          "dependency-changes-report",
+        ].flatMap((name) => [
+          [`${name}.json`, {}],
+          [`${name}.md`, "# Report\n"],
+        ]),
+      ),
+      "dependency-evidence-summary.md": "# Dependency evidence\n",
+      "npm-package-locks.json": npmLocks,
+      "npm-package-locks.md": "# npm package-lock mirrors\n",
+    };
+    const proof = await qualificationFixture(
+      fixture.descriptor,
+      {
         baseline: "published",
         // Extended-stable comparisons can exceed 16 MiB across declaration history.
         diff: { exports: [{ before: "export type Previous = unknown;\n".repeat(575_000) }] },
-      };
-      const transported = encoded ? encodePluginSdkApiArtifact(sdkEvidence) : sdkEvidence;
-      const proof = await qualificationFixture(fixture.descriptor, transported, dependencyReports);
-      const manifest = await qualifyNpmPackageBundle({
-        descriptor: fixture.descriptor,
-        inputDir,
-        outputDir,
-        producer: {
-          ...fixture.descriptor.producer,
-          jobId: "50",
-          jobName: "Qualify prepared npm package",
-        },
-        ...proof,
-      });
-      const manifestBytes = readFileSync(join(outputDir, "preflight-manifest.json"));
-      expect(manifestBytes.byteLength).toBe(Buffer.byteLength(`${JSON.stringify(manifest)}\n`));
-      expect(manifest.pluginSdkApi).toEqual(transported);
-      expect(decodePluginSdkApiArtifact(manifest.pluginSdkApi)).toEqual(sdkEvidence);
-      expect(manifest.version).toBe(3);
-      expect(manifest.preparedBundle).toEqual(fixture.descriptor);
-      for (const [name, value] of Object.entries(dependencyReports)) {
-        expect(readFileSync(join(outputDir, "dependency-evidence", name), "utf8")).toBe(
-          typeof value === "string" ? value : `${JSON.stringify(value)}\n`,
-        );
-      }
-      for (const entry of [
-        fixture.descriptor.package.fileName,
-        ...fixture.descriptor.corePackages.map((pkg) => pkg.tarballName),
-      ]) {
-        expect(readFileSync(join(outputDir, entry))).toEqual(fixture.files.get(entry));
-      }
-      expect(
-        describeNpmBundle({
-          directory: outputDir,
-          artifact: fixture.descriptor.artifact,
-          qualified: true,
-        }),
-      ).toMatchObject({
-        schema: "openclaw.qualified-npm-preflight/v1",
-        source: { sha: sourceSha },
-        preparedBundle: fixture.descriptor,
-      });
-    },
-  );
+      },
+      dependencyReports,
+    );
+    const manifest = await qualifyNpmPackageBundle({
+      descriptor: fixture.descriptor,
+      inputDir,
+      outputDir,
+      producer: {
+        ...fixture.descriptor.producer,
+        jobId: "50",
+        jobName: "Qualify prepared npm package",
+      },
+      ...proof,
+    });
+    const manifestBytes = readFileSync(join(outputDir, "preflight-manifest.json"));
+    expect(manifestBytes.byteLength).toBe(Buffer.byteLength(`${JSON.stringify(manifest)}\n`));
+    expect(manifest.version).toBe(3);
+    expect(manifest.preparedBundle).toEqual(fixture.descriptor);
+    for (const [name, value] of Object.entries(dependencyReports)) {
+      expect(readFileSync(join(outputDir, "dependency-evidence", name), "utf8")).toBe(
+        typeof value === "string" ? value : `${JSON.stringify(value)}\n`,
+      );
+    }
+    for (const entry of [
+      fixture.descriptor.package.fileName,
+      ...fixture.descriptor.corePackages.map((pkg) => pkg.tarballName),
+    ]) {
+      expect(readFileSync(join(outputDir, entry))).toEqual(fixture.files.get(entry));
+    }
+    expect(
+      describeNpmBundle({
+        directory: outputDir,
+        artifact: fixture.descriptor.artifact,
+        qualified: true,
+      }),
+    ).toMatchObject({
+      schema: "openclaw.qualified-npm-preflight/v1",
+      source: { sha: sourceSha },
+      preparedBundle: fixture.descriptor,
+    });
+  });
 
   it("rejects a valid bundle for another publication tag before extracting artifacts", async () => {
     const fixture = await bundleFixture();

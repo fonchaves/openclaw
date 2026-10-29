@@ -1,15 +1,14 @@
 #!/usr/bin/env -S node --import tsx
 
-import { mkdtempSync, rmSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { delimiter, join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { hasUnjoinedWork, runManagedCommand } from "./lib/managed-child-process.mts";
 import { collectClawHubPublishablePluginPackages } from "./lib/plugin-clawhub-release.ts";
 import { collectPublishablePluginPackages } from "./lib/plugin-npm-release.ts";
 
-// Tool identity comes from this checked-out script, never the package source or ambient PATH.
-const TOOLING_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const DEFAULT_CLAWHUB_CLI_PACKAGE = "clawhub@0.23.3";
 // Match the existing npm release-check and shrinkwrap command 10-minute ceilings: complete
 // plugin builds and packs retain their normal budget while lifecycle or registry stalls stop.
 const PLUGIN_RELEASE_PRETAG_COMMAND_TIMEOUT_MS = 10 * 60_000;
@@ -109,24 +108,32 @@ export async function runPluginReleasePretagPackCheck(
   rootDir = resolve("."),
   options: { timeoutMs?: number } = {},
 ): Promise<void> {
-  if (
-    process.env.CLAWHUB_CLI_PACKAGE?.trim() &&
-    process.env.CLAWHUB_CLI_PACKAGE.trim() !== "clawhub@0.23.3"
-  ) {
-    throw new Error(
-      "CLAWHUB_CLI_PACKAGE overrides are not supported by the pinned release toolchain.",
-    );
-  }
   const timeoutMs = options.timeoutMs ?? PLUGIN_RELEASE_PRETAG_COMMAND_TIMEOUT_MS;
   const targets = collectPluginReleasePretagPackTargets(rootDir);
   const tempRoot = mkdtempSync(join(tmpdir(), "openclaw-plugin-pretag-pack-"));
-  const cliRoot = join(tempRoot, "clawhub-cli");
-  let cliMaterialized = false;
+  const wrapperDir = join(tempRoot, "bin");
+  mkdirSync(wrapperDir);
+  const clawHubWrapper = join(wrapperDir, "clawhub");
+  writeFileSync(
+    clawHubWrapper,
+    [
+      "#!/usr/bin/env bash",
+      "set -euo pipefail",
+      'exec npm exec --yes --package "${CLAWHUB_CLI_PACKAGE}" -- clawhub "$@"',
+      "",
+    ].join("\n"),
+  );
+  chmodSync(clawHubWrapper, 0o755);
 
   let unjoinedWork = false;
   try {
-    const prebuiltPackEnv = {
+    const packEnv = {
       ...process.env,
+      CLAWHUB_CLI_PACKAGE: process.env.CLAWHUB_CLI_PACKAGE?.trim() || DEFAULT_CLAWHUB_CLI_PACKAGE,
+      PATH: `${wrapperDir}${delimiter}${process.env.PATH ?? ""}`,
+    };
+    const prebuiltPackEnv = {
+      ...packEnv,
       OPENCLAW_PLUGIN_NPM_RUNTIME_BUILD: "0",
     };
     for (const [index, target] of targets.entries()) {
@@ -163,25 +170,6 @@ export async function runPluginReleasePretagPackCheck(
         );
       }
       if (target.packClawHub) {
-        if (!cliMaterialized) {
-          await runCommand(
-            "bash",
-            [
-              join(TOOLING_ROOT, "scripts/materialize-clawhub-cli.sh"),
-              join(TOOLING_ROOT, ".github/release/clawhub-cli"),
-              cliRoot,
-            ],
-            {
-              commandLabel:
-                "bash scripts/materialize-clawhub-cli.sh <trusted-tool-lock> <temporary-cli>",
-              cwd: TOOLING_ROOT,
-              env: { ...process.env, npm_config_min_release_age: "7" },
-              stage: "ClawHub CLI materialization",
-              timeoutMs,
-            },
-          );
-          cliMaterialized = true;
-        }
         const outputDir = join(tempRoot, `clawhub-${index}`);
         console.log(`ClawHub pack: ${target.packageName}`);
         await runCommand(
@@ -192,7 +180,6 @@ export async function runPluginReleasePretagPackCheck(
             cwd: rootDir,
             env: {
               ...prebuiltPackEnv,
-              OPENCLAW_CLAWHUB_CLI: join(cliRoot, "node_modules/.bin/clawhub"),
               OPENCLAW_CLAWHUB_PACK_OUTPUT_DIR: outputDir,
             },
             quietStdout: true,

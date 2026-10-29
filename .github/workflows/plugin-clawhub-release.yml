@@ -79,10 +79,11 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   NODE_VERSION: "24.22.1"
   CLAWHUB_REGISTRY: "https://clawhub.ai"
+  CLAWHUB_CLI_PACKAGE: "clawhub@0.23.3"
 
 jobs:
   preview_plugins_clawhub:
-    runs-on: ${{ vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), '"ubuntu-latest"')) || ('ubuntu-latest') }}
+    runs-on: ${{ vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), toJSON('ubuntu-latest'))) || ('ubuntu-latest') }}
     permissions:
       actions: read
       contents: read
@@ -503,7 +504,7 @@ jobs:
     name: Validate release publish approval
     needs: preview_plugins_clawhub
     if: github.event_name == 'workflow_dispatch' && needs.preview_plugins_clawhub.outputs.has_candidates == 'true'
-    runs-on: ${{ vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), '"ubuntu-latest"')) || ('ubuntu-latest') }}
+    runs-on: ${{ vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), toJSON('ubuntu-latest'))) || ('ubuntu-latest') }}
     permissions:
       actions: read
       attestations: read
@@ -600,7 +601,7 @@ jobs:
     name: Pack ClawHub package (${{ matrix.plugin.packageName }})
     needs: [preview_plugins_clawhub, validate_release_publish_approval]
     if: github.event_name == 'workflow_dispatch' && needs.preview_plugins_clawhub.outputs.has_candidates == 'true'
-    runs-on: ${{ vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), '"ubuntu-latest"')) || ('ubuntu-latest') }}
+    runs-on: ${{ vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), toJSON('ubuntu-latest'))) || ('ubuntu-latest') }}
     permissions:
       actions: read
       contents: read
@@ -636,6 +637,18 @@ jobs:
           install-bun: "true"
           install-deps: "true"
 
+      - name: Install pinned ClawHub CLI wrapper
+        if: inputs.prepared_artifact == ''
+        run: |
+          set -euo pipefail
+          cat > "${RUNNER_TEMP}/clawhub" <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          exec npm exec --yes --package "${CLAWHUB_CLI_PACKAGE}" -- clawhub "$@"
+          EOF
+          chmod +x "${RUNNER_TEMP}/clawhub"
+          echo "${RUNNER_TEMP}" >> "${GITHUB_PATH}"
+
       - name: Checkout trusted artifact tooling
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -643,18 +656,6 @@ jobs:
           ref: ${{ github.workflow_sha }}
           path: .release-tooling
           fetch-depth: 1
-
-      - name: Materialize pinned ClawHub CLI
-        if: inputs.prepared_artifact == ''
-        id: clawhub_cli
-        env:
-          npm_config_min_release_age: "7"
-        run: |
-          set -euo pipefail
-          bash .release-tooling/scripts/materialize-clawhub-cli.sh \
-            .release-tooling/.github/release/clawhub-cli \
-            "${RUNNER_TEMP}/clawhub-cli" \
-            "${GITHUB_OUTPUT}"
 
       - name: Pack ClawHub package artifact
         if: inputs.prepared_artifact == ''
@@ -665,7 +666,6 @@ jobs:
           SOURCE_REF: ${{ inputs.release_tag != '' && format('refs/tags/{0}', inputs.release_tag) || github.ref }}
           PACKAGE_TAG: ${{ matrix.plugin.publishTag }}
           PACKAGE_DIR: ${{ matrix.plugin.packageDir }}
-          OPENCLAW_CLAWHUB_CLI: ${{ steps.clawhub_cli.outputs.cli }}
           OPENCLAW_CLAWHUB_PACK_OUTPUT_DIR: ${{ runner.temp }}/clawhub-package-artifact
           PNPM_CONFIG_MODULES_DIR: ${{ github.workspace }}/node_modules
         run: bash .release-tooling/scripts/plugin-clawhub-publish.sh --pack "${PACKAGE_DIR}" --metadata-root .release-tooling
@@ -726,7 +726,7 @@ jobs:
     name: Seal prepared ClawHub packages
     needs: [preview_plugins_clawhub, pack_plugins_clawhub_artifacts]
     if: always() && inputs.dry_run && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/release-publish/')) && needs.preview_plugins_clawhub.result == 'success' && (needs.pack_plugins_clawhub_artifacts.result == 'success' || needs.pack_plugins_clawhub_artifacts.result == 'skipped')
-    runs-on: ${{ vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), '"ubuntu-latest"')) || ('ubuntu-latest') }}
+    runs-on: ${{ vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), toJSON('ubuntu-latest'))) || ('ubuntu-latest') }}
     permissions:
       actions: read
       contents: read
@@ -775,7 +775,7 @@ jobs:
     name: Seal ClawHub package transactions
     needs: [preview_plugins_clawhub, pack_plugins_clawhub_artifacts]
     if: github.event_name == 'workflow_dispatch' && inputs.dry_run != true && needs.preview_plugins_clawhub.outputs.has_candidates == 'true'
-    runs-on: ${{ vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), '"ubuntu-latest"')) || ('ubuntu-latest') }}
+    runs-on: ${{ vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), toJSON('ubuntu-latest'))) || ('ubuntu-latest') }}
     permissions:
       actions: read
       contents: read

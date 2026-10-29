@@ -128,7 +128,7 @@ env:
 jobs:
   resolve_release_target:
     name: Resolve release target
-    runs-on: ${{ vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), '"ubuntu-latest"')) || ('ubuntu-latest') }}
+    runs-on: ${{ vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), toJSON('ubuntu-latest'))) || ('ubuntu-latest') }}
     timeout-minutes: 20
     outputs:
       sha: ${{ steps.manifest.outputs.sha || steps.signed_tag.outputs.sha }}
@@ -679,16 +679,9 @@ jobs:
           }
           const archivesDir = join(env.RUNNER_TEMP, 'openclaw-npm-preflight-archives');
           mkdirSync(archivesDir, { recursive: true });
-          const sdkRequiredEntries = ['plugin-sdk-api-release-diff.json', 'plugin-sdk-api-release-evidence.json'];
-          // Preflights also upload the readable diff summary; older ones carry only the JSON pair.
-          const sdkAllowedEntries = new Set([...sdkRequiredEntries, 'plugin-sdk-api-release-diff.md']);
-          for (const [artifact, directory, entryPolicy] of [
-            [preflight[0], 'openclaw-npm-preflight-manifest', { minEntries: 1, maxEntries: 1024, allowPath: () => true }],
-            [sdk[0], 'openclaw-plugin-sdk-api-evidence', {
-              minEntries: sdkRequiredEntries.length,
-              maxEntries: sdkAllowedEntries.size,
-              allowPath: (name) => sdkAllowedEntries.has(name),
-            }],
+          for (const [artifact, directory, expectedEntries] of [
+            [preflight[0], 'openclaw-npm-preflight-manifest', undefined],
+            [sdk[0], 'openclaw-plugin-sdk-api-evidence', ['plugin-sdk-api-release-diff.json', 'plugin-sdk-api-release-evidence.json']],
           ]) {
             const outputDir = join(env.RUNNER_TEMP, directory);
             const archivePath = join(archivesDir, `${artifact.id}.zip`);
@@ -728,7 +721,10 @@ jobs:
                 runStatePolicy: 'completed-success',
               },
               archivePolicy: {
-                ...entryPolicy,
+                expectedEntries,
+                minEntries: 1,
+                maxEntries: 1024,
+                allowPath: () => true,
                 maxEntryBytes: () => 256 * 1024 * 1024,
               },
             };
@@ -737,13 +733,6 @@ jobs:
             const files = qualified
               ? inspectActionsArtifactZipWithPolicy((await downloadExactActionsArtifactArchive(download)).archiveBytes, download.archivePolicy)
               : (await readPublicationArtifactArchive(download)).files;
-            if (artifact === sdk[0]) {
-              const names = new Set([...files].map(([name]) => name));
-              const missing = sdkRequiredEntries.filter((name) => !names.has(name));
-              if (missing.length > 0) {
-                throw new Error(`${artifact.name} is missing ${missing.join(', ')}.`);
-              }
-            }
             rmSync(outputDir, { recursive: true, force: true });
             mkdirSync(outputDir, { recursive: true });
             for (const [name, bytes] of files) {
@@ -1034,7 +1023,7 @@ jobs:
   record_docker_only_scope:
     needs: resolve_release_target
     if: inputs.publish_docker_only
-    runs-on: ${{ vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), '"ubuntu-latest"')) || ('ubuntu-latest') }}
+    runs-on: ${{ vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), toJSON('ubuntu-latest'))) || ('ubuntu-latest') }}
     permissions:
       contents: read
     steps:
@@ -1074,7 +1063,7 @@ jobs:
     permissions:
       actions: write
       contents: read
-    runs-on: ${{ vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), '"ubuntu-latest"')) || ('ubuntu-latest') }}
+    runs-on: ${{ vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), toJSON('ubuntu-latest'))) || ('ubuntu-latest') }}
     timeout-minutes: 360
     outputs:
       qualified: ${{ steps.proof.outputs.qualified }}
@@ -1310,7 +1299,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.resolve_release_target.outputs.sha }}
-          fetch-depth: ${{ inputs.release_evidence_mode == 'authorized-beta-focused-v1' && '0' || '1' }}
+          fetch-depth: ${{ inputs.release_evidence_mode == 'authorized-beta-focused-v1' && 0 || 1 }}
           persist-credentials: false
 
       - name: Checkout trusted release tooling
@@ -1657,7 +1646,6 @@ jobs:
       - name: Dispatch publish workflows
         id: children
         env:
-          EXPECTED_VALIDATION_BRANCH: ${{ needs.resolve_release_target.outputs.expected_validation_branch }}
           GH_TOKEN: ${{ github.token }}
           TARGET_SHA: ${{ needs.resolve_release_target.outputs.sha }}
           CHILD_WORKFLOW_REF: ${{ steps.clawhub_plan.outputs.child_workflow_ref }}
@@ -1768,7 +1756,7 @@ jobs:
           if [[ "${RELEASE_NPM_DIST_TAG}" == "extended-stable" ]]; then
             npm_args+=(
               -f npm_dist_tag=extended-stable
-              -f release_candidate_branch="${EXPECTED_VALIDATION_BRANCH}"
+              -f release_candidate_branch="${{ needs.resolve_release_target.outputs.expected_validation_branch }}"
             )
           fi
 
@@ -1840,7 +1828,6 @@ jobs:
       - name: Start core npm publication
         id: core_start
         env:
-          EXPECTED_VALIDATION_BRANCH: ${{ needs.resolve_release_target.outputs.expected_validation_branch }}
           GH_TOKEN: ${{ github.token }}
           FULL_RELEASE_VALIDATION_MANIFEST_DIR: ${{ runner.temp }}/full-release-validation-manifest
           TARGET_SHA: ${{ needs.resolve_release_target.outputs.sha }}
@@ -1900,7 +1887,7 @@ jobs:
           fi
           if [[ "${RELEASE_NPM_DIST_TAG}" == "extended-stable" ]]; then
             evidence_args+=(
-              -f release_candidate_branch="${EXPECTED_VALIDATION_BRANCH}"
+              -f release_candidate_branch="${{ needs.resolve_release_target.outputs.expected_validation_branch }}"
               -f plugin_npm_run_id="${plugin_npm_run_id}"
             )
           fi
@@ -1940,14 +1927,13 @@ jobs:
         id: clawhub_authorization
         if: steps.children.outputs.plugin_clawhub_run_id != ''
         env:
-          PLUGIN_CLAWHUB_RUN_ID: ${{ steps.children.outputs.plugin_clawhub_run_id }}
           GH_TOKEN: ${{ github.token }}
           TARGET_SHA: ${{ needs.resolve_release_target.outputs.sha }}
           RELEASE_TAG: ${{ inputs.tag }}
           WAIT_FOR_CLAWHUB: ${{ inputs.wait_for_clawhub && 'true' || 'false' }}
         run: |
           node .release-harness/scripts/clawhub-parent-authorization.mjs authorize \
-            --child-run "${PLUGIN_CLAWHUB_RUN_ID}" \
+            --child-run '${{ steps.children.outputs.plugin_clawhub_run_id }}' \
             --plan "$RUNNER_TEMP/openclaw-release-clawhub-plan.json" \
             --output "$RUNNER_TEMP/clawhub-parent-authorization/authorization.json"
 
@@ -2190,7 +2176,7 @@ jobs:
     name: Verify already-published core npm package
     needs: [resolve_release_target]
     if: ${{ inputs.publish_docker_only }}
-    runs-on: ${{ vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), '"ubuntu-latest"')) || ('ubuntu-latest') }}
+    runs-on: ${{ vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), toJSON('ubuntu-latest'))) || ('ubuntu-latest') }}
     permissions:
       contents: read
     steps:
@@ -2297,7 +2283,7 @@ jobs:
     # Prepared releases become visible in the outer button workflow, after this
     # parent succeeds and ClawHub's terminal publication can be verified.
     if: ${{ always() && inputs.prepared_plugins == '' && inputs.publish_openclaw_npm && needs.publish.result == 'success' && needs.publish_docker.result == 'success' && (needs.approve_github_release.result == 'success' || (inputs.finalize_release_before_docker && needs.finalize_github_release_before_docker.result == 'success')) }}
-    runs-on: ${{ vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), '"ubuntu-latest"')) || ('ubuntu-latest') }}
+    runs-on: ${{ vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), toJSON('ubuntu-latest'))) || ('ubuntu-latest') }}
     concurrency:
       group: linux-app-release-publish
       cancel-in-progress: false
@@ -2406,7 +2392,7 @@ jobs:
     name: Activate GitHub release before Docker
     needs: [publish, approve_github_release_before_docker]
     if: ${{ inputs.finalize_release_before_docker && needs.publish.result == 'success' && needs.approve_github_release_before_docker.result == 'success' }}
-    runs-on: ${{ vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), '"ubuntu-latest"')) || ('ubuntu-latest') }}
+    runs-on: ${{ vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), toJSON('ubuntu-latest'))) || ('ubuntu-latest') }}
     concurrency:
       group: linux-app-release-publish
       cancel-in-progress: false
@@ -2422,7 +2408,7 @@ jobs:
     if: ${{ !cancelled() && needs.finalize_github_release.result == 'success' && inputs.npm_dist_tag == 'latest' && !contains(inputs.tag, '-beta.') }}
     # Dispatch only; the child owns the shared metadata queue and its outcome.
     continue-on-error: true
-    runs-on: ${{ vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), '"ubuntu-latest"')) || ('ubuntu-latest') }}
+    runs-on: ${{ vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), toJSON('ubuntu-latest'))) || ('ubuntu-latest') }}
     timeout-minutes: 5
     permissions:
       actions: write
@@ -2537,7 +2523,7 @@ jobs:
     # App failures are reported by their own workflow; neither npm nor the
     # published GitHub release depends on native asset availability.
     continue-on-error: true
-    runs-on: ${{ vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), '"ubuntu-latest"')) || ('ubuntu-latest') }}
+    runs-on: ${{ vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), toJSON('ubuntu-latest'))) || ('ubuntu-latest') }}
     timeout-minutes: 10
     permissions:
       actions: write
@@ -2594,7 +2580,7 @@ jobs:
     needs:
       [publish, publish_android, publish_vcr, dispatch_linux_mirror, publish_linux, publish_windows]
     if: ${{ failure() || cancelled() }}
-    runs-on: ${{ vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), '"ubuntu-latest"')) || ('ubuntu-latest') }}
+    runs-on: ${{ vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), toJSON('ubuntu-latest'))) || ('ubuntu-latest') }}
     timeout-minutes: 5
     permissions:
       actions: write

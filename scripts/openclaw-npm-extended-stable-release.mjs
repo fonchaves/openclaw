@@ -4,7 +4,6 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { appendFileSync, readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { classifyReleaseTrain, parseReleaseVersion } from "./lib/release-version.mjs";
-import { decodePluginSdkApiArtifact } from "./plugin-sdk-api-release-evidence.mjs";
 
 const SUPPORTED_DIST_TAGS = new Set(["beta", "latest", "extended-stable"]);
 
@@ -96,8 +95,7 @@ export function validateNpmPreflightDistTag({ manifest, npmDistTag }) {
   }
   // Only the qualified package format proves both regular-release predecessors.
   // Historical receipts and prerelease/extended-stable packages retain exact channels.
-  const pluginSdkApi = decodePluginSdkApiArtifact(manifest?.pluginSdkApi);
-  const selectors = pluginSdkApi?.selectors;
+  const selectors = manifest?.pluginSdkApi?.selectors;
   if (
     manifest?.version === 3 &&
     typeof manifest.packageVersion === "string" &&
@@ -106,7 +104,7 @@ export function validateNpmPreflightDistTag({ manifest, npmDistTag }) {
     [
       "openclaw.plugin-sdk-api-release-evidence-set/v1",
       "openclaw.plugin-sdk-api-release-evidence-set/v2",
-    ].includes(pluginSdkApi?.schema) &&
+    ].includes(manifest.pluginSdkApi?.schema) &&
     selectors &&
     Object.keys(selectors).length === 2 &&
     ["beta", "latest"].every(

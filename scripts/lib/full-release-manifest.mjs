@@ -49,7 +49,8 @@ export function buildReleaseValidationManifest({ plan, drain, context, reusedMan
     candidateBinding: plan.candidate,
     publicationArtifacts: context.publicationArtifacts ?? { npmPreflight: null, docker: null },
     publishInputs: context.publishInputs,
-    advisoryJobs: drain?.advisoryJobs ?? [],
+    // Keep the wire field; current release policy admits no advisory jobs.
+    advisoryJobs: [],
     childEvidence,
     ...(plan.qualificationCoverage
       ? {

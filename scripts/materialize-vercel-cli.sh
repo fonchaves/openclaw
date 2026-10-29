@@ -8,7 +8,7 @@ github_output="${3:-}"
 
 package_json="${source_root}/package.json"
 package_lock="${source_root}/package-lock.json"
-expected_lock_sha256="66a6cc0ce3ef98363bf9defa35e143bd5e35e98de07785c541127b8ace71afef"
+expected_lock_sha256="312340c3d28e8573dc71cc0c83b7eafaefecefc25ac8a423e05f0bd0f820ec32"
 expected_vercel_integrity="sha512-z1jQG02//8JH/ujvHgdb+elvb4T1H5/UahNeeeTYXrcmuu6Scl40FQdW1G7d/obcSRJP6jOcubofzvC5G/xgmg=="
 test -f "${package_json}"
 test -f "${package_lock}"
@@ -46,13 +46,8 @@ vercel_integrity="$(
     --ignore-scripts \
     --no-audit \
     --no-fund \
-    --min-release-age=7 \
     --omit=dev
 )
-
-# Zod 4.6.7 retains the legacy record API used by the pinned Python builder.
-# Verify the native compatibility surface before exposing release credentials.
-node "$(dirname "${BASH_SOURCE[0]}")/verify-vercel-zod.mjs" "${destination}"
 
 vercel_version="$(
   VERCEL_CLI_ROOT="${destination}" \

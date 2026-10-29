@@ -543,7 +543,6 @@ describe("plugin npm extended-stable workflow", () => {
           "release-tooling-identity.mjs",
           "lib/record-shared.mjs",
           "openclaw-npm-extended-stable-release.mjs",
-          "plugin-sdk-api-release-evidence.mjs",
           "lib/release-version.mjs",
         ]) {
           writeFileSync(join(root, "scripts", script), readFileSync(join("scripts", script)));

@@ -24,7 +24,7 @@ import {
 } from "./plugin-native-namespace.js";
 import {
   admitPluginNativeRecoveryReference,
-  createPluginNativeReferenceValidator,
+  assertPluginNativeReferenceNamespace,
   linkPluginNativeReference,
 } from "./plugin-native-reference.js";
 import { resolvePluginModulePackageRoot } from "./plugin-package-metadata-capture.js";
@@ -174,8 +174,6 @@ export function createPluginNativeAdmission(
   const files = new Map<string, PluginNativeArtifactFact>();
   const targets = new Map<string, string>();
   const hardlinkedTargets = new Set<string>();
-  const pendingTargets = new Set<string>();
-  let assertReference = createPluginNativeReferenceValidator(directory);
   const recoveredFiles = new Map<string, PluginNativeArtifactFact>();
   let hostRoot: string | undefined;
   let finalReceipt: NativeReceipt | undefined;
@@ -367,16 +365,18 @@ export function createPluginNativeAdmission(
     }
     fact.sourceIdentity = member.sourceIdentity;
     fact.capturedIdentity = linked.capturedIdentity;
-    pendingTargets.add(target);
     return linked.sourceIdentity;
   };
-  const assertReferenceNamespaces = (references: Iterable<string> = pendingTargets) => {
-    for (const target of references) {
-      if (!hardlinkedTargets.has(target)) {
-        continue;
-      }
+  const assertReferenceNamespaces = () => {
+    for (const target of hardlinkedTargets) {
       const fact = files.get(targets.get(target)!)!;
-      assertReference(target, fact, state.namespaces.get(fact.namespace)!, hostRoot);
+      assertPluginNativeReferenceNamespace(
+        target,
+        fact,
+        state.namespaces.get(fact.namespace)!,
+        directory,
+        hostRoot,
+      );
     }
   };
   const linkHost = (selectedHost: string): void => {
@@ -638,8 +638,7 @@ export function createPluginNativeAdmission(
       };
     },
     finish(receipt: NativeReceipt) {
-      // Preparation preserves admitted bytes. Only materialization adds native admission work.
-      if (!pendingTargets.size) {
+      if (!files.size) {
         return;
       }
       for (const namespace of namespaces()) {
@@ -651,15 +650,11 @@ export function createPluginNativeAdmission(
       }
       assertReferenceNamespaces();
       publish();
-      pendingTargets.clear();
     },
     linkHost(selectedHost: string) {
-      // Explicit host selection is a new admission boundary, even without newly captured files.
-      assertReference = createPluginNativeReferenceValidator(directory);
       linkHost(selectedHost);
-      assertReferenceNamespaces(hardlinkedTargets);
+      assertReferenceNamespaces();
       publish();
-      pendingTargets.clear();
       return new Map([...files].map(([source, fact]) => [source, fact.sourceIdentity]));
     },
   };

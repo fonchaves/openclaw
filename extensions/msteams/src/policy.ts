@@ -17,7 +17,6 @@ import {
   resolveChannelEntryMatchWithFallback,
   resolveNestedAllowlistDecision,
 } from "../runtime-api.js";
-import { withoutUnresolvedMSTeamsAllowlistEntries } from "./resolve-allowlist.js";
 
 type MSTeamsResolvedRouteConfig = {
   teamConfig?: MSTeamsTeamConfig;
@@ -62,7 +61,7 @@ function resolveMSTeamsToolPolicyScope(params: {
   // Each level selects one whole entry, so exact matches hide that level's wildcard.
   // Selected channel fields then cascade into selected team fields through the path.
   const teamMatch = resolveChannelEntryMatchWithFallback({
-    entries: withoutUnresolvedMSTeamsAllowlistEntries(teams),
+    entries: teams,
     keys: buildChannelKeyCandidates(params.groupSpace?.trim()),
     wildcardKey: "*",
     normalizeKey: normalizeChannelSlug,
@@ -70,7 +69,7 @@ function resolveMSTeamsToolPolicyScope(params: {
   const matchedTeamKey = teamMatch.matchKey ?? teamMatch.key;
   if (teamMatch.entry && matchedTeamKey) {
     const channelMatch = resolveChannelEntryMatchWithFallback({
-      entries: withoutUnresolvedMSTeamsAllowlistEntries(teamMatch.entry.channels ?? {}),
+      entries: teamMatch.entry.channels ?? {},
       keys: buildChannelKeyCandidates(params.groupId?.trim()),
       wildcardKey: "*",
       normalizeKey: normalizeChannelSlug,
@@ -100,7 +99,7 @@ function resolveMSTeamsCrossTeamScanScope(params: { cfg: MSTeamsConfig; groupId?
   // The first channel match in team insertion order owns the path.
   for (const [teamKey, team] of Object.entries(teams)) {
     const channelMatch = resolveChannelEntryMatchWithFallback({
-      entries: withoutUnresolvedMSTeamsAllowlistEntries(team.channels ?? {}),
+      entries: team.channels ?? {},
       keys: channelCandidates,
       wildcardKey: "*",
       normalizeKey: normalizeChannelSlug,
@@ -136,7 +135,7 @@ export function resolveMSTeamsRouteConfig(params: {
     params.allowNameMatching && teamName ? normalizeChannelSlug(teamName) : undefined,
   );
   const teamMatch = resolveChannelEntryMatchWithFallback({
-    entries: withoutUnresolvedMSTeamsAllowlistEntries(teams),
+    entries: teams,
     keys: teamCandidates,
     wildcardKey: "*",
     normalizeKey: normalizeChannelSlug,
@@ -150,7 +149,7 @@ export function resolveMSTeamsRouteConfig(params: {
     params.allowNameMatching && channelName ? normalizeChannelSlug(channelName) : undefined,
   );
   const channelMatch = resolveChannelEntryMatchWithFallback({
-    entries: withoutUnresolvedMSTeamsAllowlistEntries(channels),
+    entries: channels,
     keys: channelCandidates,
     wildcardKey: "*",
     normalizeKey: normalizeChannelSlug,
