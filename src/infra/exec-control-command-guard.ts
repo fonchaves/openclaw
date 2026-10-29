@@ -405,7 +405,11 @@ export async function rejectUnsafeExecControlShellCommand(
 
 export async function rejectUnsafeExecLiveStateSqliteShellCommand(
   command: string,
-  context: Required<ExecControlShellCommandContext>,
+  context: {
+    stateDir: string;
+    workdir: string;
+    host?: string;
+  },
 ): Promise<void> {
   const unsafeKind = await detectUnsafeExecControlShellCommand(command, context);
   rejectIncompleteCommandAnalysis(unsafeKind);
