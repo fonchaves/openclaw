@@ -39,7 +39,6 @@ import {
   assertCronModelJobAllowed,
   cronCreateMatchesCallerScope,
   cronJobMatchesCallerScope,
-  cronTrustedJobOwnedByCaller,
   cronPatchSessionRefsMatchCaller,
   readCronCallerScope,
   resolveCronCreatorAuthorityCapture,
@@ -60,6 +59,8 @@ import {
 } from "./cron-input-validation.js";
 import {
   assertCronReadCurrent,
+  assertTrustedJobNarrowingOwner,
+  cronUpdateNarrowsTrustedJob,
   resolveCronJobId,
   respondInvalidCronParams,
   respondMissingCronJobId,
@@ -201,15 +202,7 @@ export const cronHandlers: GatewayRequestHandlers = {
       }
     }
     const touchesToolRuntime = patch.payload !== undefined || Object.hasOwn(patch, "trigger");
-    // Pause, resume, rename and reschedule keep operator authority; changing what a trusted job
-    // runs or where it reports from a scoped conversation narrows it to that conversation.
-    const narrowsTrustedJob =
-      currentJob.scheduledToolPolicy?.mode === "trusted" &&
-      callerScope !== undefined &&
-      !callerScope.manageAll &&
-      ["payload", "trigger", "delivery", "sessionTarget", "sessionKey"].some((key) =>
-        Object.hasOwn(patch, key),
-      );
+    const narrowsTrustedJob = cronUpdateNarrowsTrustedJob(currentJob, patch, callerScope);
     let deliveryPreview: CronDeliveryPreview | undefined;
     const validateUpdate = async (jobToUpdate: CronStoredJob) => {
       assertCronModelJobAllowed(client, cfg, jobToUpdate, patch);
@@ -233,16 +226,8 @@ export const cronHandlers: GatewayRequestHandlers = {
           `Cannot authorize toolsAllow: ${patch.payload?.toolsAllow?.join(", ") ?? ""}. Recreate the automation from a fresh authenticated owner turn to capture app authority.`,
         );
       }
-      if (
-        narrowsTrustedJob &&
-        callerScope &&
-        !cronTrustedJobOwnedByCaller(jobToUpdate, callerScope, { requireAccount: true })
-      ) {
-        throw new TypeError(
-          "This automation runs with operator access and its owner record has no account, so from " +
-            "here you can only pause, resume, reschedule, rename or remove it. To change what it runs " +
-            "or where it reports, create a new automation here or use the Automations page.",
-        );
+      if (narrowsTrustedJob) {
+        assertTrustedJobNarrowingOwner(jobToUpdate, callerScope);
       }
       const refusal = touchesToolRuntime
         ? resolveCronScopedToolEditRefusal({ job: jobToUpdate, nextJob, patch, callerScope })

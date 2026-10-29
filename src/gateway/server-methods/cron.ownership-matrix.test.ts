@@ -403,6 +403,17 @@ describe("cron ownership access matrix", () => {
       "only pause, resume, reschedule, rename or remove it",
     );
     expect((await legacy.stored())?.delivery).toEqual({ mode: "none" });
+    const alertRoute = { after: 1, mode: "webhook", to: "https://alerts.example/cron" };
+    const realert = await updateAs(
+      "scoped",
+      { id: legacy.id, patch: { failureAlert: alertRoute } },
+      legacy.context,
+    );
+    expect(String(realert.respond.mock.calls[0]?.[2]?.message)).toContain(
+      "only pause, resume, reschedule, rename or remove it",
+    );
+    expect(await legacy.stored()).toMatchObject({ scheduledToolPolicy: trusted });
+    expect((await legacy.stored())?.failureAlert).toBeUndefined();
     const scratch = await invokeCron(
       "cron.scratch.set",
       { id: legacy.id, content: "run differently" },

@@ -25,7 +25,7 @@ scenario:
     - The owner conversation pauses a trusted job whose owner record has no account, and the job stays trusted.
     - Another conversation cannot pause the owner's trusted job.
     - A prompt and tool edit from the owner conversation drops the job to account authority bound to that conversation.
-    - A legacy owner record without an account cannot change what a trusted job runs.
+    - A legacy owner record without an account cannot change what a trusted job runs or where its failures alert.
   docsRefs:
     - docs/automation/cron-jobs.md
   codeRefs:
@@ -51,6 +51,7 @@ scenario:
       ownedMarker: QA-CRON-TRUSTED-OWNER-OWNED-PAUSED
       narrowMarker: QA-CRON-TRUSTED-OWNER-NARROWED
       legacyNarrowMarker: QA-CRON-TRUSTED-OWNER-LEGACY-REFUSED
+      realertMarker: QA-CRON-TRUSTED-OWNER-REALERT-REFUSED
 
 flow:
   steps:
@@ -152,3 +153,17 @@ flow:
             message:
               expr: "`a legacy owner record changed what a trusted job runs: ${JSON.stringify({ message: legacyAfter.payload?.message, policy: legacyAfter.scheduledToolPolicy, tool: await lastToolOutput() })}`"
       detailsExpr: "`narrowed policy=${narrowedJob.scheduledToolPolicy?.mode} legacy policy=${legacyAfter.scheduledToolPolicy?.mode}`"
+
+    - name: a legacy owner record cannot move a trusted job's failure alerts
+      actions:
+        - set: realertReply
+          value:
+            expr: "await ask(config.conversationId, `Trusted automation owner QA check: action=realert target=${legacyJob.id} marker=${config.realertMarker}`, config.realertMarker)"
+        - set: realertAfter
+          value:
+            expr: "await env.gateway.call('cron.get', { id: legacyJob.id }, { timeoutMs: 30000 })"
+        - assert:
+            expr: "!realertAfter.failureAlert && realertAfter.scheduledToolPolicy?.mode === 'trusted' && String((await lastToolOutput())[0] ?? '').includes('owner record has no account')"
+            message:
+              expr: "`a legacy owner record moved a trusted job's failure alerts: ${JSON.stringify({ failureAlert: realertAfter.failureAlert, policy: realertAfter.scheduledToolPolicy, tool: await lastToolOutput() })}`"
+      detailsExpr: "`realert failureAlert=${JSON.stringify(realertAfter.failureAlert ?? null)} policy=${realertAfter.scheduledToolPolicy?.mode}`"

@@ -109,9 +109,10 @@ operator can change their prompt or tools.
 
 Operator-created automations that name an owner conversation run with operator
 authority. That conversation can list, enable, disable, reschedule, rename, run
-or remove them; other conversations cannot see them. When the owner conversation
-changes the prompt, tools, trigger, delivery or session target, the job drops to
-that conversation's own authority. If its owner record has no account, those
+or remove them; other conversations cannot see them. Enabling, disabling,
+renaming and schedule or timing changes keep operator authority. Any other change
+from the owner conversation, such as the prompt, tools, trigger, delivery, failure
+alerts or session target, drops the job to that conversation's own authority. If its owner record has no account, those
 changes need a Gateway owner or an operator, or a new automation. Only a Gateway
 owner or an operator can write its scratch.
 
