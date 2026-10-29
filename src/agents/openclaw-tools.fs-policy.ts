@@ -7,7 +7,7 @@ import { resolveOpenClawToolsFsPolicy, type ToolFsPolicy } from "./tool-fs-polic
  * the deprecated sync factory) get the same policy the embedded runner would derive. Omission
  * must never read as "unrestricted": the delegate tool grants Full Access without it.
  */
-export function resolveCapturedOpenClawToolsFsPolicy(
+function resolveCapturedOpenClawToolsFsPolicy(
   options: Pick<
     OpenClawToolsOptions,
     "fsPolicy" | "config" | "sessionPermissionPolicy" | "runSessionKey" | "agentSessionKey"
